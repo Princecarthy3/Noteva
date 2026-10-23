@@ -2,15 +2,17 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type ReviewRequest = { rating?: unknown; review?: unknown };
+const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
 export async function GET() {
   let supabase;
   try {
     supabase = await createClient();
   } catch {
-    return NextResponse.json({ reviews: [] }, { headers: { "Cache-Control": "public, max-age=60" } });
+    return NextResponse.json({ reviews: [] }, { headers: noStoreHeaders });
   }
 
   const { data, error } = await supabase
@@ -21,12 +23,12 @@ export async function GET() {
 
   if (error) {
     console.error("Student reviews could not be loaded", { code: error.code });
-    return NextResponse.json({ error: "Reviews could not be loaded. Apply the student reviews migration and try again." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Reviews could not be loaded. Apply the student reviews migration and try again." },
+      { status: 500, headers: noStoreHeaders },
+    );
   }
-  return NextResponse.json(
-    { reviews: data ?? [] },
-    { headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" } },
-  );
+  return NextResponse.json({ reviews: data ?? [] }, { headers: noStoreHeaders });
 }
 
 export async function POST(request: Request) {
@@ -88,5 +90,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Your review could not be saved. Apply the student reviews migration and try again." }, { status: 500 });
   }
 
-  return NextResponse.json({ review: savedReview }, { status: 201 });
+  return NextResponse.json({ review: savedReview }, { status: 201, headers: noStoreHeaders });
 }

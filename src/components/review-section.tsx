@@ -29,7 +29,7 @@ export function ReviewSection() {
 
   useEffect(() => {
     let active = true;
-    void fetch("/api/reviews")
+    const loadReviews = () => void fetch("/api/reviews", { cache: "no-store" })
       .then(async (response) => {
         const body = await response.json() as { reviews?: StudentReview[]; error?: string };
         if (!response.ok) throw new Error(body.error || "Reviews could not be loaded.");
@@ -44,8 +44,18 @@ export function ReviewSection() {
           setError(true);
         }
       });
+    const onReviewSaved = (event: Event) => {
+      const review = (event as CustomEvent<StudentReview>).detail;
+      if (!review) return;
+      setReviews((current) => [review, ...current.filter((item) => item.id !== review.id)].slice(0, 12));
+      setMessage("");
+      setError(false);
+    };
+    loadReviews();
+    window.addEventListener("studystation-review-saved", onReviewSaved);
     return () => {
       active = false;
+      window.removeEventListener("studystation-review-saved", onReviewSaved);
     };
   }, []);
 
@@ -107,16 +117,18 @@ export function ReviewComposer({ className = "" }: { className?: string }) {
     try {
       const response = await fetch("/api/reviews", {
         method: "POST",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rating, review: reviewText }),
       });
-      const body = await response.json() as { error?: string };
+      const body = await response.json() as { review?: StudentReview; error?: string };
       if (response.status === 401) {
         setMessage("Sign in to share a review.");
         setError(true);
         return;
       }
-      if (!response.ok) throw new Error(body.error || "Your review could not be saved.");
+      if (!response.ok || !body.review) throw new Error(body.error || "Your review could not be saved.");
+      window.dispatchEvent(new CustomEvent<StudentReview>("studystation-review-saved", { detail: body.review }));
       setReviewText("");
       setMessage("Thanks for sharing your experience. Your review is now on the page.");
     } catch (cause) {
