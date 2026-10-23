@@ -12,18 +12,40 @@
   --line: #e9e6f2;
 }
 
-html[data-theme="dark"] .workspace-shell {
+html[data-theme="dark"] {
   color-scheme: dark;
-  background: #11101a !important;
-  color: #f2effa !important;
+  --ink: #f3f0fa;
+  --muted: #aaa4b8;
+  --paper: #100f18;
+  --lavender-soft: #302a48;
+  --line: #353244;
 }
 
-html[data-theme="dark"] .workspace-shell .bg-white {
-  background-color: #1c1a28 !important;
+html[data-theme="dark"] body {
+  background-color: #100f18;
+  color: #f3f0fa;
 }
 
-html[data-theme="dark"] .workspace-shell [class*="bg-[#f"] {
-  background-color: #242131 !important;
+html[data-theme="dark"] .workspace-shell {
+  background: #100f18 !important;
+  color: #f3f0fa !important;
+}
+
+html[data-theme="dark"] .workspace-shell .bg-white,
+html[data-theme="dark"] [class~="bg-white"] {
+  background-color: #1b1926 !important;
+}
+
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f"],
+html[data-theme="dark"] [class*="bg-[#fb"],
+html[data-theme="dark"] [class*="bg-[#f7"],
+html[data-theme="dark"] [class*="bg-[#f5"],
+html[data-theme="dark"] [class*="bg-[#f4"],
+html[data-theme="dark"] [class*="bg-[#f3"],
+html[data-theme="dark"] [class*="bg-[#f2"],
+html[data-theme="dark"] [class*="bg-[#f1"],
+html[data-theme="dark"] [class*="bg-[#f0"] {
+  background-color: #242130 !important;
 }
 
 html[data-theme="dark"] .workspace-shell [class~="text-[#17132d]"],
@@ -31,90 +53,105 @@ html[data-theme="dark"] .workspace-shell [class~="text-[#28233a]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#302a40]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#2a2440]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#252033]"],
-html[data-theme="dark"] .workspace-shell [class~="text-[#373145]"] {
-  color: #f2effa !important;
+html[data-theme="dark"] .workspace-shell [class~="text-[#373145]"],
+html[data-theme="dark"] [class~="text-[#17132d]"],
+html[data-theme="dark"] [class~="text-[#28233a]"],
+html[data-theme="dark"] [class~="text-[#211b35]"],
+html[data-theme="dark"] [class~="text-[#302a40]"],
+html[data-theme="dark"] [class~="text-[#2a2440]"],
+html[data-theme="dark"] [class~="text-[#252033]"],
+html[data-theme="dark"] [class~="text-[#373145]"],
+html[data-theme="dark"] [class~="text-[#3d374a]"],
+html[data-theme="dark"] [class~="text-[#403b4b]"],
+html[data-theme="dark"] [class~="text-[#343047]"],
+html[data-theme="dark"] [class~="text-[#514a66]"],
+html[data-theme="dark"] [class~="text-[#555064]"],
+html[data-theme="dark"] [class~="text-[#605a72]"],
+html[data-theme="dark"] [class~="text-[#625b6d]"],
+html[data-theme="dark"] [class~="text-[#40384f]"],
+html[data-theme="dark"] [class~="text-[#4e485b]"] {
+  color: #f3f0fa !important;
+}
+
+html[data-theme="dark"] .workspace-shell [class~="text-[#7d7789]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#85808d]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#8a8494]"],
+html[data-theme="dark"] [class~="text-[#7d7789]"],
+html[data-theme="dark"] [class~="text-[#85808d]"],
+html[data-theme="dark"] [class~="text-[#878193]"],
+html[data-theme="dark"] [class~="text-[#8a8494]"],
+html[data-theme="dark"] [class~="text-[#696277]"],
+html[data-theme="dark"] [class~="text-[#6e6a7e]"],
+html[data-theme="dark"] [class~="text-[#6c667a]"],
+html[data-theme="dark"] [class~="text-[#5f596b]"] {
+  color: #b9b3c7 !important;
 }
 
 html[data-theme="dark"] .workspace-shell [class*="border-[#e"],
-html[data-theme="dark"] .workspace-shell [class*="border-[#f"] {
-  border-color: #353244 !important;
+html[data-theme="dark"] .workspace-shell [class*="border-[#f"],
+html[data-theme="dark"] [class*="border-[#e"],
+html[data-theme="dark"] [class*="border-[#f"] {
+  border-color: #393648 !important;
 }
 
 html[data-theme="dark"] .workspace-shell input:not([type="color"]),
 html[data-theme="dark"] .workspace-shell select,
-html[data-theme="dark"] .workspace-shell textarea {
+html[data-theme="dark"] .workspace-shell textarea,
+html[data-theme="dark"] input:not([type="color"]),
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
   color-scheme: dark;
-  border-color: #413d53;
+  border-color: #454155;
   background-color: #211f2d;
-  color: #f2effa;
+  color: #f3f0fa;
 }
 
-html[data-theme="dark"] .workspace-shell input::placeholder,
-html[data-theme="dark"] .workspace-shell textarea::placeholder {
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
   color: #aaa4b7;
 }
 
-html[data-theme="dark"] .workspace-shell .profile-panel {
-  border-color: #353244;
-  background-color: #1c1a28;
+html[data-theme="dark"] .profile-panel,
+html[data-theme="dark"] .glass-panel {
+  border-color: #393648;
+  background-color: rgb(27 25 38 / 88%);
 }
 
-html[data-theme="dark"] .workspace-shell .profile-panel h1,
-html[data-theme="dark"] .workspace-shell .profile-panel h2 {
-  color: #f2effa;
+html[data-theme="dark"] .workspace-shell header,
+html[data-theme="dark"] .workspace-shell .glass-panel {
+  color: #f3f0fa;
 }
 
-@media (prefers-color-scheme: dark) {
-  html[data-theme="system"] .workspace-shell .bg-white {
-    background-color: #1c1a28 !important;
-  }
+html[data-theme="dark"] .install-card {
+  border-color: #393648;
+  background-color: #1b1926;
+}
 
-  html[data-theme="system"] .workspace-shell [class*="bg-[#f"] {
-    background-color: #242131 !important;
-  }
+html[data-theme="dark"] .install-instructions {
+  border-color: #393648;
+  background-color: #242130;
+}
 
-  html[data-theme="system"] .workspace-shell [class~="text-[#17132d]"],
-  html[data-theme="system"] .workspace-shell [class~="text-[#28233a]"],
-  html[data-theme="system"] .workspace-shell [class~="text-[#302a40]"],
-  html[data-theme="system"] .workspace-shell [class~="text-[#2a2440]"],
-  html[data-theme="system"] .workspace-shell [class~="text-[#252033]"],
-  html[data-theme="system"] .workspace-shell [class~="text-[#373145]"] {
-    color: #f2effa !important;
-  }
+html[data-theme="dark"] .install-instructions h3 {
+  color: #f3f0fa;
+}
 
-  html[data-theme="system"] .workspace-shell [class*="border-[#e"],
-  html[data-theme="system"] .workspace-shell [class*="border-[#f"] {
-    border-color: #353244 !important;
-  }
+html[data-theme="dark"] .install-instructions ol,
+html[data-theme="dark"] .install-card > div:last-of-type p {
+  color: #b9b3c7;
+}
 
-  html[data-theme="system"] .workspace-shell input:not([type="color"]),
-  html[data-theme="system"] .workspace-shell select,
-  html[data-theme="system"] .workspace-shell textarea {
-    color-scheme: dark;
-    border-color: #413d53;
-    background-color: #211f2d;
-    color: #f2effa;
-  }
-
-  html[data-theme="system"] .workspace-shell input::placeholder,
-  html[data-theme="system"] .workspace-shell textarea::placeholder {
-    color: #aaa4b7;
-  }
-
-  html[data-theme="system"] .workspace-shell .profile-panel {
-    border-color: #353244;
-    background-color: #1c1a28;
-  }
-
-  html[data-theme="system"] .workspace-shell .profile-panel h1,
-  html[data-theme="system"] .workspace-shell .profile-panel h2 {
-    color: #f2effa;
-  }
-
-  html[data-theme="system"] .workspace-shell {
-    background: #11101a !important;
-    color: #f2effa !important;
-  }
+.step-number {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: #eeeaff;
+  color: #7259e8;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 * {
@@ -587,5 +624,142 @@ html.motion-ready [data-card-reveal]:nth-child(6) { transition-delay: 400ms; }
     transform: none;
     transition: none;
     will-change: auto;
+  }
+}
+
+.info-page {
+  isolation: isolate;
+  background-image:
+    linear-gradient(rgb(114 89 232 / 2.3%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(114 89 232 / 2.3%) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% 8%, rgb(237 231 255 / 72%), transparent 47%);
+  background-size: 42px 42px, 42px 42px, auto;
+}
+
+.info-orb {
+  position: absolute;
+  z-index: 0;
+  width: 360px;
+  height: 360px;
+  border-radius: 9999px;
+  filter: blur(70px);
+  pointer-events: none;
+  animation: info-drift 13s ease-in-out infinite alternate;
+}
+
+.info-orb-one {
+  top: 80px;
+  right: -170px;
+  background: rgb(172 147 255 / 24%);
+}
+
+.info-orb-two {
+  top: 290px;
+  left: -220px;
+  background: rgb(128 190 255 / 17%);
+  animation-delay: -5s;
+}
+
+.info-enter {
+  animation: info-rise 750ms cubic-bezier(.2, .75, .25, 1) both;
+}
+
+.info-hero h1 {
+  position: relative;
+  isolation: isolate;
+}
+
+.info-title-mark {
+  position: absolute;
+  z-index: -1;
+  right: 10%;
+  bottom: 1px;
+  left: 10%;
+  height: 11px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(255 223 120 / 0%), rgb(255 223 120 / 82%), rgb(255 223 120 / 0%));
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: info-underline 800ms cubic-bezier(.2, .75, .25, 1) 500ms forwards;
+}
+
+.info-page-card {
+  animation: info-rise 700ms cubic-bezier(.2, .75, .25, 1) both;
+  transition:
+    transform 350ms cubic-bezier(.2, .75, .25, 1),
+    border-color 350ms ease,
+    box-shadow 350ms ease;
+}
+
+.info-page-card:hover {
+  transform: translateY(-6px);
+  border-color: rgb(167 139 250 / 65%);
+  box-shadow: 0 22px 50px rgb(66 48 133 / 12%);
+}
+
+.info-cta {
+  animation: info-rise 700ms cubic-bezier(.2, .75, .25, 1) 250ms both;
+}
+
+.info-cta-orb {
+  animation: info-pulse 7s ease-in-out infinite alternate;
+}
+
+@keyframes info-rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes info-underline {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes info-drift {
+  from {
+    transform: translate3d(-10px, -8px, 0) scale(.92);
+  }
+  to {
+    transform: translate3d(18px, 18px, 0) scale(1.08);
+  }
+}
+
+@keyframes info-pulse {
+  from {
+    opacity: .55;
+    transform: scale(.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info-orb,
+  .info-enter,
+  .info-title-mark,
+  .info-page-card,
+  .info-cta,
+  .info-cta-orb {
+    animation: none;
+    transform: none;
+  }
+
+  .info-enter {
+    opacity: 1;
+  }
+
+  .info-page-card,
+  .info-page-card:hover {
+    transition: none;
+    transform: none;
   }
 }

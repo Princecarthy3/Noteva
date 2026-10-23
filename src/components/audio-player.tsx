@@ -19,10 +19,11 @@ interface AudioPlayerProps {
   className?: string;
   variant?: "card" | "compact" | "banner";
   autoPlay?: boolean;
+  durationHintSeconds?: number;
 }
 
 function formatTime(seconds: number): string {
-  if (isNaN(seconds) || seconds < 0) return "00:00";
+  if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
@@ -34,12 +35,13 @@ export function AudioPlayer({
   className = "",
   variant = "card",
   autoPlay = false,
+  durationHintSeconds,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const durationProbeRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,9 +54,37 @@ export function AudioPlayer({
     setIsLoading(true);
     setHasError(false);
     setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+
+    const syncDuration = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+        setIsLoading(false);
+        return;
+      }
+
+      const lastSeekableRange = audio.seekable.length - 1;
+      if (lastSeekableRange >= 0) {
+        const seekableEnd = audio.seekable.end(lastSeekableRange);
+        if (Number.isFinite(seekableEnd) && seekableEnd > 0) {
+          setDuration(seekableEnd);
+          return;
+        }
+      }
+
+      if (audio.duration === Infinity && durationProbeRef.current === null) {
+        durationProbeRef.current = audio.currentTime;
+        try {
+          audio.currentTime = Number.MAX_SAFE_INTEGER;
+        } catch {
+          durationProbeRef.current = null;
+        }
+      }
+    };
 
     const onLoadedMetadata = () => {
-      setDuration(audio.duration || 0);
+      syncDuration();
       setIsLoading(false);
     };
 
@@ -63,23 +93,60 @@ export function AudioPlayer({
     };
 
     const onTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
+      if (durationProbeRef.current === null) setCurrentTime(audio.currentTime);
     };
 
     const onEnded = () => {
       setIsPlaying(false);
-      setCurrentTime(audio.duration || 0);
+      if (Number.isFinite(audio.duration)) setCurrentTime(audio.duration);
+    };
+
+    const onSeeked = () => {
+      const previousTime = durationProbeRef.current;
+      if (previousTime === null) return;
+
+      const measuredDuration = Number.isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : audio.seekable.length
+          ? audio.seekable.end(audio.seekable.length - 1)
+          : 0;
+      durationProbeRef.current = null;
+      if (Number.isFinite(measuredDuration) && measuredDuration > 0) {
+        setDuration(measuredDuration);
+        const restoredTime = Math.min(previousTime, measuredDuration);
+        audio.currentTime = restoredTime;
+        setCurrentTime(restoredTime);
+      }
+    };
+
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onWaiting = () => setIsLoading(true);
+    const onCanPlayThrough = () => setIsLoading(false);
+
+    const onLoadStart = () => {
+      setIsLoading(true);
+      setHasError(false);
     };
 
     const onError = () => {
       setIsLoading(false);
       setHasError(true);
+      durationProbeRef.current = null;
     };
 
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("durationchange", syncDuration);
+    audio.addEventListener("progress", syncDuration);
     audio.addEventListener("canplay", onCanPlay);
+    audio.addEventListener("canplaythrough", onCanPlayThrough);
+    audio.addEventListener("loadstart", onLoadStart);
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("ended", onEnded);
+    audio.addEventListener("seeked", onSeeked);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("waiting", onWaiting);
     audio.addEventListener("error", onError);
 
     if (autoPlay) {
@@ -88,10 +155,19 @@ export function AudioPlayer({
 
     return () => {
       audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("durationchange", syncDuration);
+      audio.removeEventListener("progress", syncDuration);
       audio.removeEventListener("canplay", onCanPlay);
+      audio.removeEventListener("canplaythrough", onCanPlayThrough);
+      audio.removeEventListener("loadstart", onLoadStart);
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("seeked", onSeeked);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("waiting", onWaiting);
       audio.removeEventListener("error", onError);
+      durationProbeRef.current = null;
       audio.pause();
     };
   }, [src, autoPlay]);
@@ -109,17 +185,18 @@ export function AudioPlayer({
 
   function handleSeek(newTime: number) {
     const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = newTime;
-    setCurrentTime(newTime);
+    const maxTime = Number.isFinite(duration) && duration > 0 ? duration : displayDuration;
+    if (!audio || !Number.isFinite(newTime) || maxTime <= 0) return;
+    const targetTime = Math.min(Math.max(newTime, 0), maxTime);
+    audio.currentTime = targetTime;
+    setCurrentTime(targetTime);
   }
 
   function skip(seconds: number) {
     const audio = audioRef.current;
     if (!audio) return;
-    const target = Math.min(Math.max(0, audio.currentTime + seconds), duration || audio.duration || 0);
-    audio.currentTime = target;
-    setCurrentTime(target);
+    if (displayDuration <= 0) return;
+    handleSeek(audio.currentTime + seconds);
   }
 
   function toggleMute() {
@@ -139,7 +216,13 @@ export function AudioPlayer({
     setPlaybackRate(nextSpeed);
   }
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const validDurationHint = typeof durationHintSeconds === "number" &&
+    Number.isFinite(durationHintSeconds) &&
+    durationHintSeconds > 0
+    ? durationHintSeconds
+    : 0;
+  const displayDuration = Number.isFinite(duration) && duration > 0 ? duration : validDurationHint;
+  const progressPercent = displayDuration > 0 ? Math.min((currentTime / displayDuration) * 100, 100) : 0;
 
   if (hasError) {
     return (
@@ -176,16 +259,39 @@ export function AudioPlayer({
             <input
               type="range"
               min={0}
-              max={duration || 100}
+              max={displayDuration || 100}
               step={0.1}
               value={currentTime}
               onChange={(e) => handleSeek(parseFloat(e.target.value))}
+              disabled={displayDuration <= 0}
               className="h-1 flex-1 cursor-pointer appearance-none rounded-lg bg-[#eeeaf2] accent-[#7259e8]"
               aria-label="Seek audio"
             />
-            <span className="text-[9px] font-bold text-[#868093] tabular-nums">{formatTime(duration)}</span>
+            <span className="text-[9px] font-bold text-[#868093] tabular-nums">{formatTime(displayDuration)}</span>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => skip(-10)}
+          disabled={displayDuration <= 0}
+          className="grid size-7 shrink-0 place-items-center rounded-lg text-[#777180] transition hover:bg-[#f2eff9] hover:text-[#7259e8] disabled:opacity-40"
+          aria-label="Skip backward 10 seconds"
+          title="Rewind 10 seconds"
+        >
+          <RotateCcw className="size-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => skip(10)}
+          disabled={displayDuration <= 0}
+          className="grid size-7 shrink-0 place-items-center rounded-lg text-[#777180] transition hover:bg-[#f2eff9] hover:text-[#7259e8] disabled:opacity-40"
+          aria-label="Skip forward 10 seconds"
+          title="Forward 10 seconds"
+        >
+          <RotateCw className="size-3.5" />
+        </button>
 
         <button
           type="button"
@@ -228,7 +334,7 @@ export function AudioPlayer({
           >
             <Gauge className="size-3" />
             <span>{playbackRate}x</span>
-          </button>
+            </button>
 
           <button
             type="button"
@@ -247,10 +353,11 @@ export function AudioPlayer({
           <input
             type="range"
             min={0}
-            max={duration || 100}
+            max={displayDuration || 100}
             step={0.1}
             value={currentTime}
             onChange={(e) => handleSeek(parseFloat(e.target.value))}
+            disabled={displayDuration <= 0}
             className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-[#e7e1f4] accent-[#7259e8] transition"
             style={{
               background: `linear-gradient(to right, #7259e8 ${progressPercent}%, #e7e1f4 ${progressPercent}%)`,
@@ -261,7 +368,7 @@ export function AudioPlayer({
 
         <div className="flex justify-between text-[10px] font-bold text-[#8a8397] tabular-nums">
           <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
+          <span>{formatTime(displayDuration)}</span>
         </div>
       </div>
 
@@ -270,6 +377,7 @@ export function AudioPlayer({
         <button
           type="button"
           onClick={() => skip(-10)}
+          disabled={displayDuration <= 0}
           className="grid size-8 place-items-center rounded-xl bg-white text-[#6a6377] border border-[#e6e1f0] hover:bg-[#f4f1fb] transition"
           aria-label="Skip backward 10 seconds"
           title="Rewind 10 seconds"
@@ -295,6 +403,7 @@ export function AudioPlayer({
         <button
           type="button"
           onClick={() => skip(10)}
+          disabled={displayDuration <= 0}
           className="grid size-8 place-items-center rounded-xl bg-white text-[#6a6377] border border-[#e6e1f0] hover:bg-[#f4f1fb] transition"
           aria-label="Skip forward 10 seconds"
           title="Forward 10 seconds"

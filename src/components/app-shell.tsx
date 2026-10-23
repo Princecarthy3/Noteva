@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowLeft,
@@ -70,7 +71,9 @@ import {
   Zap,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
-import { ProfileSettings, type ThemePreference } from "@/components/profile-settings";
+import { ProfileSettings } from "@/components/profile-settings";
+import { useTheme } from "@/components/theme-provider";
+import { useInstallApp } from "@/components/install-app";
 import {
   LectureStudio,
   Stage6Courses,
@@ -108,11 +111,6 @@ type View =
 type Modal = "capture" | "flashcards" | "note" | null;
 type SourceTab = "record" | "upload";
 type ChatMessage = { role: "user" | "assistant"; content: string; citation?: string };
-
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
 
 type SpeechRecognitionResult = { isFinal: boolean; 0: { transcript: string } };
 type SpeechRecognitionEvent = { resultIndex: number; results: ArrayLike<SpeechRecognitionResult> };
@@ -192,7 +190,8 @@ export function AppShell({
   const [sourceTab, setSourceTab] = useState<SourceTab>("record");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [theme, setTheme] = useState<ThemePreference>("system");
+  const { theme, setTheme } = useTheme();
+  const { openInstallInstructions } = useInstallApp();
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -202,6 +201,8 @@ export function AppShell({
   const [interimTranscript, setInterimTranscript] = useState("");
   const [captionStatus, setCaptionStatus] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [autoOpenLectureId, setAutoOpenLectureId] = useState<string | null>(null);
+  const clearAutoOpenLecture = useCallback(() => setAutoOpenLectureId(null), []);
 
   // Active note selected from real lectures
   const [activeLectureNote, setActiveLectureNote] = useState<Stage6Lecture | null>(null);
@@ -220,7 +221,6 @@ export function AppShell({
 
   const [courseValue, setCourseValue] = useState("");
   const [lectureTitle, setLectureTitle] = useState("");
-  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -249,29 +249,6 @@ export function AppShell({
       setSourceTab("record");
     }
   }, [params]);
-
-  useEffect(() => {
-    const handler = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as InstallPromptEvent);
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
-
-  useEffect(() => {
-    const storedTheme = window.localStorage.getItem("studystation-theme");
-    if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") setTheme(storedTheme);
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem("studystation-theme", theme);
-    const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
-    const applyTheme = () => { document.documentElement.dataset.theme = theme; };
-    applyTheme();
-    systemDark.addEventListener("change", applyTheme);
-    return () => systemDark.removeEventListener("change", applyTheme);
-  }, [theme]);
 
   useEffect(() => {
     if (!toast) return;
@@ -448,6 +425,7 @@ export function AppShell({
       if (!processResponse.ok) {
         setModal(null);
         setView("lectures");
+        setAutoOpenLectureId(created.lectureId);
         setToast(processed.error || (isDoc ? "The document was uploaded but could not be parsed yet. Retry it from Lecture Studio." : "The lecture was uploaded but could not be transcribed yet. Retry it from Lecture Studio."));
         setLectureTitle("");
         router.refresh();
@@ -469,6 +447,7 @@ export function AppShell({
       }
       setModal(null);
       setView("lectures");
+      setAutoOpenLectureId(created.lectureId);
       setRecordedBlob(null);
       setLectureTitle("");
       router.refresh();
@@ -566,16 +545,6 @@ export function AppShell({
     }
   }
 
-  async function installApp() {
-    if (installPrompt) {
-      await installPrompt.prompt();
-      await installPrompt.userChoice;
-      setInstallPrompt(null);
-    } else {
-      setToast("On iPhone use Share → Add to Home Screen. On Android, choose Install app from your browser menu.");
-    }
-  }
-
   function openNote(lecture: Stage6Lecture) {
     setActiveLectureNote(lecture);
     setModal("note");
@@ -662,9 +631,16 @@ export function AppShell({
           </div>
         </button>
 
+        <Link
+          href="/#students"
+          className="mt-3 flex items-center gap-2 rounded-lg px-2.5 py-2 text-[10px] font-bold text-white/55 transition hover:bg-white/5 hover:text-white"
+        >
+          <Star className="size-3.5 text-[#ffd768]" /> Share a StudyStation review
+        </Link>
+
         <div className="mt-3 flex gap-1">
           <button
-            onClick={installApp}
+            onClick={openInstallInstructions}
             className="flex flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-[10px] font-bold text-white/45 hover:bg-white/5 hover:text-white/80"
           >
             <Download className="size-3.5" /> Install app
@@ -707,7 +683,7 @@ export function AppShell({
           <div className="ml-auto flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
               title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
               className="grid size-9 place-items-center rounded-xl border border-[#e3dff0] bg-white text-[#5e47c4] shadow-sm transition hover:bg-[#f3f0ff]"
@@ -826,6 +802,8 @@ export function AppShell({
               courses={dashboardData.courses}
               timezone={dashboardData.timezone}
               loadError={dashboardData.errors.lectures}
+              autoOpenLectureId={autoOpenLectureId}
+              onAutoOpen={clearAutoOpenLecture}
               onUpload={() => {
                 setModal("capture");
                 setSourceTab("upload");

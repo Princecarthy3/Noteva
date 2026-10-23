@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Archive,
@@ -600,12 +600,16 @@ export function LectureStudio({
   courses,
   timezone,
   loadError,
+  autoOpenLectureId,
+  onAutoOpen,
   onUpload,
 }: {
   lectures: Stage6Lecture[];
   courses: Stage6Course[];
   timezone: string;
   loadError: boolean;
+  autoOpenLectureId: string | null;
+  onAutoOpen: () => void;
   onUpload: () => void;
 }) {
   const router = useRouter();
@@ -619,24 +623,50 @@ export function LectureStudio({
   const [dirty, setDirty] = useState(false);
   const courseNames = useMemo(() => new Map(courses.map((course) => [course.id, `${course.code} · ${course.title}`])), [courses]);
 
-  async function openLecture(id: string) {
+  const fetchLectureDetail = useCallback(async (id: string) => {
+    const response = await fetch(`/api/lectures/${id}`);
+    const body = await response.json() as { lecture?: LectureDetail; error?: string };
+    if (!response.ok || !body.lecture) throw new Error(body.error || "Lecture could not be loaded.");
+    return body.lecture;
+  }, []);
+
+  const openLecture = useCallback(async (id: string) => {
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/lectures/${id}`);
-      const body = await response.json() as { lecture?: LectureDetail; error?: string };
-      if (!response.ok || !body.lecture) throw new Error(body.error || "Lecture could not be loaded.");
-      setSelected(body.lecture);
-      setTranscriptDraft(body.lecture.transcript ?? "");
-      setStudioTab(body.lecture.note ? "notes" : "notes");
+      const lecture = await fetchLectureDetail(id);
+      setSelected(lecture);
+      setTranscriptDraft(lecture.transcript ?? "");
+      setStudioTab("notes");
       setDirty(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Lecture could not be loaded.");
     } finally {
       setBusy(false);
     }
-  }
+  }, [fetchLectureDetail]);
+
+  useEffect(() => {
+    if (!autoOpenLectureId || !lectures.some((lecture) => lecture.id === autoOpenLectureId)) return;
+    onAutoOpen();
+    let active = true;
+    void fetchLectureDetail(autoOpenLectureId).then((lecture) => {
+      if (!active) return;
+      setSelected(lecture);
+      setTranscriptDraft(lecture.transcript ?? "");
+      setStudioTab("notes");
+      setDirty(false);
+      setError("");
+    }).catch((cause) => {
+      if (active) setError(cause instanceof Error ? cause.message : "Lecture could not be loaded.");
+    }).finally(() => {
+      if (active) setBusy(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [autoOpenLectureId, fetchLectureDetail, lectures, onAutoOpen]);
 
   async function saveTranscript() {
     if (!selected) return;
@@ -861,6 +891,7 @@ export function LectureStudio({
                 src={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
                 title={selected.title}
                 variant="card"
+                durationHintSeconds={selected.durationSeconds ?? undefined}
               />
             )}
           </div>

@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { PwaRegister } from "@/components/pwa-register";
+import { InstallAppProvider } from "@/components/install-app";
+import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 const sansFont = Plus_Jakarta_Sans({
@@ -52,8 +54,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={sansFont.variable}>
       <body className="font-sans antialiased">
-        <PwaRegister />
-        {children}
+        <ThemeProvider>
+          <InstallAppProvider>
+            <PwaRegister />
+            {children}
+          </InstallAppProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

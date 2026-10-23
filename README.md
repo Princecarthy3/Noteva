@@ -54,6 +54,7 @@ Stage 5 uses Supabase email/password auth. Apply migrations in order:
 8. `20261021010000_courses_title_compatibility.sql` to rename a legacy `courses.name` field to `title`
 9. `20261021020000_profile_avatars.sql` before uploading private profile pictures
 10. `20261022000000_lectures_legacy_compatibility.sql` to upgrade lecture fields (`mime_type`, `storage_path`, `processing_error`) on pre-existing tables
+11. `20261023000000_student_reviews.sql` before loading or submitting public student reviews
 
 For local verification, set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_APP_URL=http://localhost:3000` in `.env.local`. In Supabase Auth settings:
 

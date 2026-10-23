@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -389,4 +390,19 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("notifications_user_created_idx").on(table.userId, table.createdAt),
+]);
+
+export const studentReviews = pgTable("student_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  rating: smallint("rating").notNull(),
+  review: text("review").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("student_reviews_rating_check", sql`${table.rating} between 1 and 5`),
+  check("student_reviews_display_name_check", sql`char_length(${table.displayName}) between 2 and 100`),
+  check("student_reviews_review_check", sql`char_length(${table.review}) between 10 and 600`),
+  index("student_reviews_created_at_idx").on(table.createdAt),
 ]);

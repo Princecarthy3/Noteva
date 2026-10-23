@@ -30,12 +30,10 @@ import {
   PhoneCall,
   Play,
   Plus,
-  Quote,
   Radio,
   Search,
   ShieldCheck,
   Sparkles,
-  Star,
   Target,
   Upload,
   UploadCloud,
@@ -46,7 +44,9 @@ import {
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { SiteHeader } from "@/components/site-header";
+import { footerLinkGroups } from "@/components/info-page";
 import { landingUniversities } from "@/lib/universities";
+import { ReviewSection } from "@/components/review-section";
 
 const waveform = [18, 30, 46, 22, 58, 36, 68, 42, 24, 52, 76, 44, 62, 26, 54, 70, 40, 22, 48, 32, 64, 42, 26, 38];
 
@@ -900,74 +900,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Student Testimonials */}
-      <section id="students" className="px-5 py-24 lg:py-32">
-        <div className="mx-auto max-w-[1140px]">
-          <div data-reveal className="mx-auto max-w-xl text-center">
-            <div className="flex justify-center gap-1 text-[#f59e0b]">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className="size-5 fill-current" />
-              ))}
-            </div>
-            <h2 className="mt-4 text-balance text-[34px] font-black tracking-[-1.8px] sm:text-[46px]">
-              Trusted by students navigating tough semesters.
-            </h2>
-          </div>
-
-          <div className="mt-14 grid gap-6 md:grid-cols-3">
-            {[
-              {
-                quote:
-                  "Having my lecture notes and practice quizzes together helped me feel much more prepared for organic chemistry.",
-                name: "Amelia R.",
-                role: "2nd Year, Neuroscience",
-                tag: "Verified Student",
-                avatar: "AR",
-                color: "#7259e8",
-              },
-              {
-                quote:
-                  "Our study group plans sessions, shares notes, and meets in one place. It made working together so much easier.",
-                name: "Daniel K.",
-                role: "Final Year, Mechanical Engineering",
-                tag: "Verified Student",
-                avatar: "DK",
-                color: "#059669",
-              },
-              {
-                quote:
-                  "The syllabus PDF import parsed my entire semester timetable in 20 seconds. The AI scheduler built study blocks right around my clinical placements.",
-                name: "Zara M.",
-                role: "1st Year, Medicine",
-                tag: "Verified Student",
-                avatar: "ZM",
-                color: "#d97706",
-              },
-            ].map((item) => (
-              <article key={item.name} data-card-reveal className="glass-panel flex flex-col justify-between rounded-[26px] p-7 shadow-sm">
-                <div>
-                  <Quote className="size-7 fill-[#7259e8]/15 text-[#7259e8]" />
-                  <p className="mt-5 text-[14px] font-semibold leading-relaxed text-[#3d374a]">
-                    &ldquo;{item.quote}&rdquo;
-                  </p>
-                </div>
-                <div className="mt-8 flex items-center gap-3 border-t border-[#f0edf5] pt-4">
-                  <span
-                    className="grid size-10 place-items-center rounded-xl font-black text-white text-[12px] shadow-sm"
-                    style={{ background: item.color }}
-                  >
-                    {item.avatar}
-                  </span>
-                  <div>
-                    <p className="text-[13px] font-black text-[#17132d]">{item.name}</p>
-                    <p className="text-[10px] font-bold text-[#837d8f]">{item.role}</p>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+      <ReviewSection />
 
       {/* Frequently Asked Questions */}
       <section id="faq" className="border-t border-[#ebe8f3] bg-[#fbfaff] px-5 py-24">
@@ -1050,25 +983,21 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-[#ebe8f3] bg-white px-5 pb-12 pt-14">
         <div className="mx-auto max-w-[1140px]">
-          <div className="grid gap-10 border-b border-[#ece8f4] pb-12 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
+          <div className="grid gap-10 border-b border-[#ece8f4] pb-12 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr]">
             <div>
               <Brand />
               <p className="mt-4 max-w-xs text-xs leading-6 text-[#756f82]">
                 StudyStation is the modern university learning workspace built to turn lectures into comprehension, retention, and academic excellence.
               </p>
             </div>
-            {[
-              ["Product", "Lecture Studio", "AI Study Lab", "Smart Planner", "Study Groups", "Live Calls"],
-              ["Learning Tools", "Lecture Notes", "Flashcards", "Practice Quizzes", "Calendar Import"],
-              ["Your Study Space", "Private Notes", "Your Courses", "Study Preferences", "Group Sharing"],
-            ].map(([head, ...items]) => (
-              <div key={head}>
-                <p className="text-xs font-black uppercase tracking-wider text-[#17132d]">{head}</p>
+            {footerLinkGroups.map(({ title, links }) => (
+              <div key={title}>
+                <p className="text-xs font-black uppercase tracking-wider text-[#17132d]">{title}</p>
                 <div className="mt-4 space-y-2.5">
-                  {items.map((x) => (
-                    <a key={x} href="#features" className="block text-xs font-medium text-[#7a7388] transition hover:text-[#7259e8]">
-                      {x}
-                    </a>
+                  {links.map(({ href, label }) => (
+                    <Link key={href} href={href} className="block text-xs font-medium text-[#7a7388] transition hover:text-[#7259e8]">
+                      {label}
+                    </Link>
                   ))}
                 </div>
               </div>

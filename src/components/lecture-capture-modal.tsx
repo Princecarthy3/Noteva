@@ -263,6 +263,7 @@ export function LectureCaptureModal({
                   src={recordedAudioUrl}
                   title={title || "Recorded lecture audio"}
                   variant="card"
+                  durationHintSeconds={seconds}
                 />
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">

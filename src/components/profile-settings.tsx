@@ -7,8 +7,7 @@ import { Camera, Check, LoaderCircle, LogOut, Moon, Sun, Trash2, UserRound, X } 
 import { signOut } from "@/app/auth/actions";
 import { saveProfile } from "@/app/app/profile-actions";
 import { createClient } from "@/lib/supabase/client";
-
-export type ThemePreference = "light" | "dark" | "system";
+import type { ThemePreference } from "@/components/theme-provider";
 
 type ProfileSettingsData = {
   fullName: string;
