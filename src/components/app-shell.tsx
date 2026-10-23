@@ -89,6 +89,7 @@ import { StudyGroups } from "@/components/study-groups";
 import type { PlannerData } from "@/components/study-planner";
 import { StudyCalendar } from "@/components/study-calendar";
 import { QuizProgressView } from "@/components/quiz-progress";
+import { GeneratedFlashcardsLibrary } from "@/components/study-material-libraries";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AudioPlayer } from "@/components/audio-player";
 import { LectureCaptureModal } from "@/components/lecture-capture-modal";
@@ -834,7 +835,6 @@ export function AppShell({
               lectures={dashboardData.lectures}
               progress={plannerData.progress}
               onOpenStudyLab={() => navigate("study-lab")}
-              onCapture={() => setModal("capture")}
             />
           )}
 
@@ -1643,38 +1643,12 @@ function FunctionalFlashcardsView({
   lectures,
   progress,
   onOpenStudyLab,
-  onCapture,
 }: {
   courses: Stage6Course[];
   lectures: Stage6Lecture[];
   progress: PlannerData["progress"];
   onOpenStudyLab: () => void;
-  onCapture: () => void;
 }) {
-  const readyLectures = useMemo(() => lectures.filter((l) => l.status === "ready"), [lectures]);
-
-  // Built-in interactive active recall mini-deck
-  const activeDeck = useMemo(() => {
-    if (!readyLectures.length) return [];
-    return readyLectures.slice(0, 3).map((lecture) => ({
-      front: `What was the central problem or topic explored in "${lecture.title}"?`,
-      back: lecture.transcript
-        ? lecture.transcript.slice(0, 200) + "…"
-        : "Review the full lecture transcript in your notes library to master this concept.",
-      tag: lecture.title,
-    }));
-  }, [readyLectures]);
-
-  const [activeCardIndex, setActiveCardIndex] = useState(0);
-  const [flipped, setFlipped] = useState(false);
-  const [masteredCount, setMasteredCount] = useState(0);
-
-  function handleScore(mastered: boolean) {
-    if (mastered) setMasteredCount((v) => v + 1);
-    setFlipped(false);
-    setActiveCardIndex((i) => (i + 1) % (activeDeck.length || 1));
-  }
-
   return (
     <div className="fade-up space-y-6">
       <TitleBlock
@@ -1714,91 +1688,7 @@ function FunctionalFlashcardsView({
         ))}
       </div>
 
-      {/* Interactive Deck Player or Empty state */}
-      {activeDeck.length > 0 ? (
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
-          {/* Card Player */}
-          <div className="glass-panel flex flex-col justify-between rounded-[28px] p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="rounded-full bg-[#eeeaff] px-3 py-1 text-[10px] font-black text-[#7259e8]">
-                ACTIVE RECALL · CARD {activeCardIndex + 1} OF {activeDeck.length}
-              </span>
-              <span className="text-[11px] font-bold text-[#868093]">{masteredCount} mastered today</span>
-            </div>
-
-            <div
-              onClick={() => setFlipped(!flipped)}
-              className="my-6 flex min-h-[200px] cursor-pointer flex-col justify-center rounded-2xl bg-gradient-to-tr from-[#faf9fd] to-[#f4f0ff] p-7 text-center border border-[#e5ddfa] transition hover:shadow-md"
-            >
-              <span className="mx-auto rounded-full bg-white px-2.5 py-1 text-[9px] font-black text-[#7259e8] shadow-sm">
-                {flipped ? "EXPLANATION / ANSWER" : "QUESTION"}
-              </span>
-              <p className="mt-4 text-[17px] font-extrabold text-[#17132d]">
-                {flipped ? activeDeck[activeCardIndex].back : activeDeck[activeCardIndex].front}
-              </p>
-              <p className="mt-4 text-[10px] font-bold text-[#948ea0]">Tap card to {flipped ? "hide" : "reveal"}</p>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => handleScore(false)}
-                className="flex-1 rounded-xl bg-[#fee2e2] py-2.5 text-[11px] font-black text-[#991b1b] hover:bg-[#fecaca] transition"
-              >
-                Review Again
-              </button>
-              <button
-                type="button"
-                onClick={() => handleScore(false)}
-                className="flex-1 rounded-xl bg-[#fef3c7] py-2.5 text-[11px] font-black text-[#92400e] hover:bg-[#fde68a] transition"
-              >
-                Hard
-              </button>
-              <button
-                type="button"
-                onClick={() => handleScore(true)}
-                className="flex-1 rounded-xl bg-[#d1fae5] py-2.5 text-[11px] font-black text-[#065f46] hover:bg-[#a7f3d0] transition"
-              >
-                Got It
-              </button>
-            </div>
-          </div>
-
-          {/* AI Generation prompt */}
-          <div className="rounded-[28px] bg-gradient-to-tr from-[#7259e8] to-[#593fd1] p-7 text-white shadow-lg flex flex-col justify-between">
-            <div>
-              <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-black">AI STUDY LAB</span>
-              <h3 className="mt-4 text-2xl font-black">Generate Custom Flashcards</h3>
-              <p className="mt-2 text-xs leading-5 text-white/75">
-                StudyStation can generate 10+ focused active-recall cards directly from your uploaded lecture transcripts with definitions and formula breakdown.
-              </p>
-            </div>
-
-            <button
-              onClick={onOpenStudyLab}
-              className="mt-6 flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-5 text-xs font-black text-[#7259e8] shadow-md hover:bg-[#faf9fe]"
-            >
-              <Sparkles className="size-4" /> Open AI Study Lab
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-[28px] border border-dashed border-[#dcd6e8] bg-white/70 p-12 text-center backdrop-blur-md">
-          <Layers3 className="mx-auto size-10 text-[#7259e8]/50" />
-          <h3 className="mt-4 text-base font-black text-[#17132d]">No flashcard decks ready yet</h3>
-          <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-[#868093]">
-            Transcribe a lecture in Lecture Studio to generate personalized active recall flashcard decks with Gemini AI.
-          </p>
-          <div className="mt-6 flex justify-center gap-3">
-            <button
-              onClick={onCapture}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-5 text-xs font-black text-white shadow-sm hover:bg-[#6247de]"
-            >
-              <Upload className="size-4" /> Upload a lecture
-            </button>
-          </div>
-        </div>
-      )}
+      <GeneratedFlashcardsLibrary onOpenStudyLab={onOpenStudyLab} />
 
       {/* Course Decks List */}
       <div>

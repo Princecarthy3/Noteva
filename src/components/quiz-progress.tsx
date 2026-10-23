@@ -2,6 +2,7 @@
 
 import { ArrowRight, CircleHelp, Target } from "lucide-react";
 import type { PlannerData } from "@/components/study-planner";
+import { GeneratedQuizLibrary } from "@/components/study-material-libraries";
 
 export function QuizProgressView({
   progress,
@@ -30,6 +31,7 @@ export function QuizProgressView({
             : <div className="mt-4 rounded-2xl border border-dashed border-[#e3deeb] bg-[#fbfaff] px-4 py-9 text-center"><CircleHelp className="mx-auto size-6 text-[#9c91c2]" /><p className="mt-3 text-sm font-extrabold text-[#373145]">No saved attempts yet</p><p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-[#8a8494]">Generate a quiz from a completed lecture in AI Study Lab. Your saved score will appear here after you finish.</p></div>}
       </section>
     </div>
+    <GeneratedQuizLibrary />
     <p className="rounded-xl border border-[#eeeaf2] bg-[#fbfaff] px-4 py-3 text-[10px] leading-5 text-[#766f81]">Scores are descriptive records of your saved attempts, not a guarantee of mastery. AI-generated questions and explanations may contain errors; compare them with your course materials.</p>
   </div>;
 }
