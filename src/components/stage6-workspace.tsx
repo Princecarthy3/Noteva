@@ -255,7 +255,7 @@ export function Stage6Dashboard({
 
     <section aria-label="Quick actions" className="grid gap-2 sm:grid-cols-3">
       <QuickAction icon={Upload} title="Upload a lecture" copy="Turn class material into notes" onClick={onCapture} />
-      <QuickAction icon={Sparkles} title="Ask Noteva" copy="Get help with your studies" onClick={onAssistant} />
+      <QuickAction icon={Sparkles} title="Ask StudyStation" copy="Get help with your studies" onClick={onAssistant} />
       <QuickAction icon={UsersRound} title="Study groups" copy="Find classmates and plan sessions" onClick={onGroups} />
     </section>
 

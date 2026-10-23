@@ -38,12 +38,12 @@ export function AuthForm({ mode, notice, setupMessage, nextPath = "/app" }: { mo
     login: "Sign in to pick up where your learning left off.",
     register: "One account for your lectures, courses, and study tools.",
     forgot: "If your email is registered, we’ll send a secure reset link.",
-    update: "Choose a new password for your Noteva account.",
+    update: "Choose a new password for your StudyStation account.",
   }[mode];
 
   return (
     <section className="w-full max-w-[440px] rounded-[28px] border border-[#e8e4ef] bg-white p-6 shadow-[0_24px_80px_rgba(41,31,77,.10)] sm:p-9">
-      <p className="text-[10px] font-black uppercase tracking-[.16em] text-[#7259e8]">Noteva account</p>
+      <p className="text-[10px] font-black uppercase tracking-[.16em] text-[#7259e8]">StudyStation account</p>
       <h1 className="mt-3 text-[28px] font-black tracking-[-1px] text-[#17132d]">{title}</h1>
       <p className="mt-2 text-[13px] leading-6 text-[#777180]">{description}</p>
 

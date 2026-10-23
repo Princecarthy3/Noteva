@@ -1,6 +1,6 @@
-# Noteva
+# StudyStation
 
-Noteva is a university learning workspace built with Next.js, TypeScript, Tailwind CSS, Supabase, and Drizzle. The existing application UI is being extended in stages; the implementation pack is in [`university_learning_platform_from_scratch_pack/`](./university_learning_platform_from_scratch_pack/).
+StudyStation is a university learning workspace built with Next.js, TypeScript, Tailwind CSS, Supabase, and Drizzle. The existing application UI is being extended in stages; the implementation pack is in [`university_learning_platform_from_scratch_pack/`](./university_learning_platform_from_scratch_pack/).
 
 ## Run locally
 
@@ -27,12 +27,12 @@ The app can render without configured Supabase/OpenRouter credentials, but conne
 
 ## Database migrations
 
-The versioned Stage 4 migration is [`supabase/migrations/20261020000000_university_platform_stage4.sql`](./supabase/migrations/20261020000000_university_platform_stage4.sql). It preserves existing Noteva tables, adds university/course catalog and platform tables, enables RLS, and creates private storage buckets. For platform tables that require `owner_id`, it upgrades compatible pre-existing tables by copying ownership from `user_id`, `created_by`, `creator_id`, `author_id`, or `uploaded_by`. It also adds missing optional `course_id` relationships needed by the platform indexes and policies.
+The versioned Stage 4 migration is [`supabase/migrations/20261020000000_university_platform_stage4.sql`](./supabase/migrations/20261020000000_university_platform_stage4.sql). It preserves existing StudyStation tables, adds university/course catalog and platform tables, enables RLS, and creates private storage buckets. For platform tables that require `owner_id`, it upgrades compatible pre-existing tables by copying ownership from `user_id`, `created_by`, `creator_id`, `author_id`, or `uploaded_by`. It also adds missing optional `course_id` relationships needed by the platform indexes and policies.
 
 The migration has **not** been verified against a live database. Before using it:
 
 1. Create or select a development Supabase project, not production.
-2. Inspect its current tables and policies. This migration keeps existing tables/data, but redefines the named policies and assumes the existing Noteva table names and core columns match `src/db/schema.ts`.
+2. Inspect its current tables and policies. This migration keeps existing tables/data, but redefines the named policies and assumes the existing StudyStation table names and core columns match `src/db/schema.ts`.
 3. Apply the SQL file using the development project's Supabase SQL Editor.
 4. Verify behavior with two separate test accounts before enabling user-facing database features.
 
@@ -148,7 +148,7 @@ After applying Stage 4 and Stage 9 migrations, configuring Supabase and the serv
 
 Stage 10 adds scheduled-session calls using the Jitsi iframe API as a prototype. Apply `20261020030000_study_calls_stage10.sql` after Stage 9 and configure `JITSI_MEET_DOMAIN` on the server (for example, `meet.jit.si`). Calls are available only for current group members and only from 30 minutes before a scheduled session until its end. Room names are random per session and are disclosed only after server-side membership and session checks. The Jitsi script is loaded only after a user explicitly chooses to join; microphone and camera start muted, and audio-only mode is available.
 
-This integration does **not** make public `meet.jit.si` rooms private or access-controlled: anyone who learns a room name may be able to join directly without passing Noteva's membership check. Jitsi is a third party that may process meeting connection details and in-call content; its service terms do not guarantee uptime. The UI discloses these limitations before joining. Do not use this prototype for confidential discussions, and do not claim it provides private or production-secure calling. Assess a signed-token provider or self-hosted Jitsi deployment before making that claim. Calls are not recorded by this integration.
+This integration does **not** make public `meet.jit.si` rooms private or access-controlled: anyone who learns a room name may be able to join directly without passing StudyStation's membership check. Jitsi is a third party that may process meeting connection details and in-call content; its service terms do not guarantee uptime. The UI discloses these limitations before joining. Do not use this prototype for confidential discussions, and do not claim it provides private or production-secure calling. Assess a signed-token provider or self-hosted Jitsi deployment before making that claim. Calls are not recorded by this integration.
 
 ### Manual Study Calls check
 

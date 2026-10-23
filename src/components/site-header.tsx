@@ -71,13 +71,13 @@ export function SiteHeader() {
       </header>
 
       {showInstallHelp && (
-        <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-[#17132d]/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Install Noteva">
+        <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-[#17132d]/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Install StudyStation">
           <div className="w-full max-w-sm rounded-[26px] bg-white p-6 shadow-2xl">
             <div className="flex items-start justify-between">
               <div className="grid size-11 place-items-center rounded-2xl bg-[#eeeaff] text-[#7259e8]"><Download className="size-5" /></div>
               <button onClick={() => setShowInstallHelp(false)} className="grid size-9 place-items-center rounded-full bg-[#f5f3fa]" aria-label="Close install instructions"><X className="size-4" /></button>
             </div>
-            <h2 className="mt-5 text-xl font-extrabold tracking-tight">Keep Noteva on your home screen</h2>
+            <h2 className="mt-5 text-xl font-extrabold tracking-tight">Keep StudyStation on your home screen</h2>
             <p className="mt-2 text-sm leading-6 text-[#6e6a7e]">On iPhone or iPad, tap <Share2 className="mx-1 inline size-4" /> <b>Share</b>, then choose <b>Add to Home Screen</b>. On Android, open your browser menu and tap <b>Install app</b>.</p>
             <button onClick={() => setShowInstallHelp(false)} className="mt-5 w-full rounded-xl bg-[#17132d] py-3 text-sm font-bold text-white">Got it</button>
           </div>

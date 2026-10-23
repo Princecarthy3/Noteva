@@ -1,4 +1,4 @@
--- Align pre-existing Noteva course tables with the title field used by the app.
+-- Align pre-existing StudyStation course tables with the title field used by the app.
 do $$
 begin
   if exists (

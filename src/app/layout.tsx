@@ -13,25 +13,25 @@ const sansFont = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000"),
   title: {
-    default: "Noteva — Turn lectures into learning",
-    template: "%s · Noteva",
+    default: "StudyStation — Turn lectures into learning",
+    template: "%s · StudyStation",
   },
   description:
     "Record or upload lectures, create structured AI notes, flashcards and quizzes, and plan your best study week.",
-  applicationName: "Noteva",
+  applicationName: "StudyStation",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Noteva",
+    title: "StudyStation",
   },
   formatDetection: { telephone: false },
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    icon: [{ url: "/logo.png", type: "image/png" }],
     apple: "/icons/apple-touch-icon.png",
   },
   openGraph: {
-    title: "Noteva — Your lectures, made learnable",
+    title: "StudyStation — Your lectures, made learnable",
     description: "AI-powered lecture capture and personalized study tools.",
     type: "website",
   },

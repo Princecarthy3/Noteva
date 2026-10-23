@@ -196,7 +196,7 @@ export async function generateOrganizedNote(params: {
   // Truncate to safe model context limit (approx ~18,000 words / 80k chars)
   const clippedTranscript = transcript.slice(0, 80_000);
 
-  const systemInstructions = `You are Noteva's academic AI study assistant. Your job is to transform a raw, spoken lecture transcript into organized, comprehensive, professional university-level study notes.
+  const systemInstructions = `You are StudyStation's academic AI study assistant. Your job is to transform a raw, spoken lecture transcript into organized, comprehensive, professional university-level study notes.
 
 Structure the response strictly as valid JSON with this exact schema:
 {

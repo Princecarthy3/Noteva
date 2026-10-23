@@ -10,7 +10,7 @@ import type { PlannerData } from "@/components/study-planner";
 
 export const metadata: Metadata = {
   title: "Your study space",
-  description: "Capture lectures, review notes and plan your study week with Noteva.",
+  description: "Capture lectures, review notes and plan your study week with StudyStation.",
 };
 export const dynamic = "force-dynamic";
 

@@ -326,7 +326,7 @@ export function LectureCaptureModal({
 
             <p className="mt-3 text-center text-[9px] leading-4 text-[#8a8494]">
               You can listen to your recording above at any time. When you tap &quot;Upload and transcribe&quot;,
-              your recording is processed by Noteva AI to generate your complete lecture notes and study sets.
+              your recording is processed by StudyStation AI to generate your complete lecture notes and study sets.
             </p>
           </div>
         ) : (
@@ -425,7 +425,7 @@ export function LectureCaptureModal({
                             Lecture Document Ready
                           </h4>
                           <p className="mx-auto mt-1 max-w-sm text-[10px] leading-4 text-[#868093]">
-                            Noteva AI will extract the full content and organize it into executive summaries, key terms, topic sections, exam takeaways, and active recall practice sets.
+                            StudyStation AI will extract the full content and organize it into executive summaries, key terms, topic sections, exam takeaways, and active recall practice sets.
                           </p>
                         </div>
                       ) : (
@@ -495,7 +495,7 @@ export function LectureCaptureModal({
               <span>Private storage</span>
             </div>
             <p className="mt-3 text-center text-[9px] leading-4 text-[#8a8494]">
-              Only upload media you have permission to process. Files are stored privately and processed with Noteva AI.
+              Only upload media you have permission to process. Files are stored privately and processed with StudyStation AI.
             </p>
           </div>
         )}

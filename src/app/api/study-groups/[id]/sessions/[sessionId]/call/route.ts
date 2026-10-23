@@ -71,7 +71,7 @@ export async function GET(_request: Request, context: RouteContext) {
   return NextResponse.json({
     provider: "jitsi",
     domain,
-    roomName: `noteva-${data.call_room_id.replaceAll("-", "")}`,
+    roomName: `studystation-${data.call_room_id.replaceAll("-", "")}`,
     session: {
       id: data.id,
       title: data.title,

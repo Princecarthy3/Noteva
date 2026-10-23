@@ -189,7 +189,7 @@ export default function LandingPage() {
                   <span className="size-3 rounded-full bg-[#ffbd2e]" />
                   <span className="size-3 rounded-full bg-[#27c93f]" />
                   <span className="ml-3 font-mono text-[11px] font-bold tracking-wider text-white/50">
-                    noteva.workspace • student-os
+                    studystation.workspace • student-os
                   </span>
                 </div>
 
@@ -729,7 +729,7 @@ export default function LandingPage() {
 
 
 
-      {/* ALL-IN-ONE SYSTEM: What Noteva Actually Does */}
+      {/* ALL-IN-ONE SYSTEM: What StudyStation Actually Does */}
       <section id="features" className="px-5 py-24 lg:py-32">
         <div className="mx-auto max-w-[1200px]">
           <div data-reveal className="mx-auto max-w-[760px] text-center">
@@ -740,7 +740,7 @@ export default function LandingPage() {
               Everything you need between the first class and the final exam.
             </h2>
             <p className="mt-5 text-[16px] leading-relaxed text-[#686278]">
-              No more juggling four disconnected apps for recording, notes, scheduling, flashcards, and group study. Noteva brings the entire academic lifecycle into one cohesive, private workspace.
+              No more juggling four disconnected apps for recording, notes, scheduling, flashcards, and group study. StudyStation brings the entire academic lifecycle into one cohesive, private workspace.
             </p>
           </div>
 
@@ -849,7 +849,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1140px]">
           <div data-reveal className="mx-auto max-w-[680px] text-center">
             <span className="glass-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[11px] font-extrabold uppercase tracking-[.14em] text-[#7259e8]">
-              How Noteva Works
+              How StudyStation Works
             </span>
             <h2 className="mt-4 text-balance text-[36px] font-black leading-[1.05] tracking-[-2px] sm:text-[50px]">
               From live lecture to exam confidence in 4 steps.
@@ -997,11 +997,11 @@ export default function LandingPage() {
               ],
               [
                 "Can I import my school timetable or course syllabus?",
-                "Yes! Noteva allows local CSV timetable parsing and supports PDF or image syllabus extraction with your explicit consent, creating editable draft study events for your review.",
+                "Yes! StudyStation allows local CSV timetable parsing and supports PDF or image syllabus extraction with your explicit consent, creating editable draft study events for your review.",
               ],
               [
-                "Does Noteva work on smartphones and tablets?",
-                "Yes. Noteva works on phones, tablets, and computers, so you can keep your study materials close wherever you are.",
+                "Does StudyStation work on smartphones and tablets?",
+                "Yes. StudyStation works on phones, tablets, and computers, so you can keep your study materials close wherever you are.",
               ],
             ].map(([question, answer]) => (
               <details key={question} className="group py-5">
@@ -1024,7 +1024,7 @@ export default function LandingPage() {
 
           <Sparkles className="mx-auto size-8 text-[#ffdf78]" />
           <h2 className="relative mx-auto mt-5 max-w-[720px] text-balance text-[38px] font-black leading-[1.05] tracking-[-2px] sm:text-[56px]">
-            Master your courses this semester with Noteva.
+            Master your courses this semester with StudyStation.
           </h2>
           <p className="relative mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-white/75">
             Turn every lecture into crystal-clear transcripts, smart flashcards, and graded practice quizzes in seconds.
@@ -1054,7 +1054,7 @@ export default function LandingPage() {
             <div>
               <Brand />
               <p className="mt-4 max-w-xs text-xs leading-6 text-[#756f82]">
-                Noteva is the modern university learning workspace built to turn lectures into comprehension, retention, and academic excellence.
+                StudyStation is the modern university learning workspace built to turn lectures into comprehension, retention, and academic excellence.
               </p>
             </div>
             {[
@@ -1076,7 +1076,7 @@ export default function LandingPage() {
           </div>
 
           <div className="flex flex-col items-center justify-between gap-3 pt-6 text-[11px] font-bold text-[#8c8699] sm:flex-row">
-            <p>© 2026 Noteva. Made for your learning journey.</p>
+            <p>© 2026 StudyStation. Made for your learning journey.</p>
             <p>Your study space, organized around you.</p>
           </div>
         </div>

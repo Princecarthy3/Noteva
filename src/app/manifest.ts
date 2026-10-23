@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/app",
-    name: "Noteva — AI study companion",
-    short_name: "Noteva",
+    name: "StudyStation — AI study companion",
+    short_name: "StudyStation",
     description:
       "Capture lectures, create detailed notes, revise with AI and plan your studies.",
     start_url: "/app?source=pwa",
@@ -28,7 +28,7 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "any",
       },
       {
-        src: "/icons/icon-maskable-512.png",
+        src: "/icons/icon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
@@ -40,13 +40,13 @@ export default function manifest(): MetadataRoute.Manifest {
         short_name: "Record",
         description: "Start capturing a lecture",
         url: "/app?action=record",
-        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
       },
       {
         name: "Open study planner",
         short_name: "Planner",
         url: "/app?view=planner",
-        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
       },
     ],
   };

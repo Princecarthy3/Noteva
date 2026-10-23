@@ -289,7 +289,7 @@ export function exportNoteToPdf(
 
     // Left footer text
     const cleanTitle = lectureTitle.length > 40 ? `${lectureTitle.slice(0, 38)}…` : lectureTitle;
-    doc.text(`Noteva Study Assistant  ·  ${cleanTitle}`, marginLeft, pageHeight - 7);
+    doc.text(`StudyStation Study Assistant  ·  ${cleanTitle}`, marginLeft, pageHeight - 7);
 
     // Right footer text (Page X of Y)
     const pageText = `Page ${i} of ${totalPages}`;

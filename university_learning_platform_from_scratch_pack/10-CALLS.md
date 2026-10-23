@@ -10,7 +10,7 @@ Evaluate Jitsi Meet for the first prototype. The public `meet.jit.si` service ma
 
 ### Prototype decision
 
-The initial implementation uses the public `meet.jit.si` Jitsi iframe API as a prototype. Noteva authorizes a current group member before returning a random room name, but the public Jitsi service does not enforce Noteva membership: anyone who learns a room name may be able to join directly. This is not a private or production-secure calling solution. The UI must disclose the third-party processing and room-name limitation before loading the provider.
+The initial implementation uses the public `meet.jit.si` Jitsi iframe API as a prototype. StudyStation authorizes a current group member before returning a random room name, but the public Jitsi service does not enforce StudyStation membership: anyone who learns a room name may be able to join directly. This is not a private or production-secure calling solution. The UI must disclose the third-party processing and room-name limitation before loading the provider.
 
 If using a managed SDK or self-hosted server instead, document cost, operations, scaling, privacy, and token/security requirements before implementation.
 

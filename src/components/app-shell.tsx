@@ -142,7 +142,7 @@ const navItems: Array<{ id: View; label: string; icon: typeof Home; section?: st
   { id: "study-lab", label: "AI Study Lab", icon: Sparkles },
   { id: "study-groups", label: "Study groups", icon: UsersRound },
   { id: "planner", label: "Study planner", icon: CalendarDays, section: "ORGANIZE" },
-  { id: "assistant", label: "Ask Noteva", icon: Bot },
+  { id: "assistant", label: "Ask StudyStation", icon: Bot },
   { id: "profile", label: "Profile & settings", icon: UserRound, section: "ACCOUNT" },
 ];
 
@@ -214,7 +214,7 @@ export function AppShell({
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: `Hi ${firstName} — I’m Noteva, your personal AI university tutor grounded in your courses and lecture materials. What concept, lecture, or problem can I help you understand today?`,
+      content: `Hi ${firstName} — I’m StudyStation, your personal AI university tutor grounded in your courses and lecture materials. What concept, lecture, or problem can I help you understand today?`,
     },
   ]);
 
@@ -260,12 +260,12 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem("noteva-theme");
+    const storedTheme = window.localStorage.getItem("studystation-theme");
     if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") setTheme(storedTheme);
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("noteva-theme", theme);
+    window.localStorage.setItem("studystation-theme", theme);
     const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = () => { document.documentElement.dataset.theme = theme; };
     applyTheme();
@@ -1132,7 +1132,7 @@ function FunctionalNotesView({
             <FileText className="mx-auto size-10 text-[#7259e8]/50" />
             <h3 className="mt-4 text-base font-black text-[#17132d]">Your notes library is ready</h3>
             <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-[#868093]">
-              Capture or upload your first lecture in Lecture Studio. Noteva automatically transcribes the recording and organizes it into your notes.
+              Capture or upload your first lecture in Lecture Studio. StudyStation automatically transcribes the recording and organizes it into your notes.
             </p>
             <button
               onClick={onCapture}
@@ -1625,7 +1625,7 @@ function FunctionalNoteModal({
                 <MessageSquareText className="size-4" />
               </span>
               <div>
-                <p className="text-[11px] font-extrabold text-[#17132d]">Ask Noteva</p>
+                <p className="text-[11px] font-extrabold text-[#17132d]">Ask StudyStation</p>
                 <p className="text-[9px] text-[#868093]">Ask questions on this lecture</p>
               </div>
             </button>
@@ -1785,7 +1785,7 @@ function FunctionalFlashcardsView({
               <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-black">AI STUDY LAB</span>
               <h3 className="mt-4 text-2xl font-black">Generate Custom Flashcards</h3>
               <p className="mt-2 text-xs leading-5 text-white/75">
-                Noteva can generate 10+ focused active-recall cards directly from your uploaded lecture transcripts with definitions and formula breakdown.
+                StudyStation can generate 10+ focused active-recall cards directly from your uploaded lecture transcripts with definitions and formula breakdown.
               </p>
             </div>
 
@@ -1851,7 +1851,7 @@ function FunctionalFlashcardsView({
 }
 
 // -------------------------------------------------------------------------------------------------
-// 4. FUNCTIONAL ASSISTANT VIEW (Ask Noteva)
+// 4. FUNCTIONAL ASSISTANT VIEW (Ask StudyStation)
 // -------------------------------------------------------------------------------------------------
 function FunctionalAssistantView({
   studentName,
@@ -1883,7 +1883,7 @@ function FunctionalAssistantView({
       <div className="flex items-end justify-between">
         <TitleBlock
           eyebrow="GROUNDED IN YOUR REAL COURSEWORK"
-          title="Ask Noteva"
+          title="Ask StudyStation"
           copy="Get clear, cited answers and explanations based strictly on the lectures and materials you have captured."
         />
         <span className="hidden items-center gap-1.5 rounded-full bg-[#def7ec] px-3.5 py-1.5 text-[10px] font-extrabold text-[#047857] sm:flex">
@@ -2012,7 +2012,7 @@ function FunctionalAssistantView({
                   }
                 }}
                 rows={1}
-                placeholder="Ask Noteva anything about your coursework…"
+                placeholder="Ask StudyStation anything about your coursework…"
                 className="max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 text-[12px] outline-none placeholder:text-[#aaa4b1]"
               />
               <button

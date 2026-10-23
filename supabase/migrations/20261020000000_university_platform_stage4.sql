@@ -83,7 +83,7 @@ create unique index if not exists student_courses_user_course_term_idx
 create index if not exists student_courses_user_id_idx on public.student_courses (user_id);
 create index if not exists course_catalog_university_title_idx on public.course_catalog (university_id, title);
 
--- Existing Noteva tables are retained as the student's personal workspace.
+-- Existing StudyStation tables are retained as the student's personal workspace.
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,

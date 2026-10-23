@@ -18,7 +18,7 @@ function headers() {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
     "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-    "X-OpenRouter-Title": "Noteva",
+    "X-OpenRouter-Title": "StudyStation",
   };
 }
 

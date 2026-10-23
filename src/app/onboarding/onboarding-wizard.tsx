@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useActionState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, GraduationCap, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import Image from "next/image";
 import { saveOnboarding } from "@/app/onboarding/actions";
 import type { AuthActionState } from "@/app/auth/actions";
 import { landingUniversities } from "@/lib/universities";
@@ -115,7 +116,7 @@ export function OnboardingWizard({
     <main className="hero-glow relative min-h-screen overflow-x-clip bg-[#fbfaff] px-4 py-6 sm:px-8">
       <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-[900px] flex-col">
         <header className="flex items-center justify-between">
-          <span className="inline-flex items-center gap-2.5"><span className="grid size-9 place-items-center rounded-[11px] bg-[#7259e8] text-lg font-black text-white">N</span><b className="text-xl font-extrabold tracking-[-.7px]">noteva</b></span>
+          <span className="inline-flex items-center gap-2.5"><Image src="/logo.png" alt="" width={36} height={36} className="size-9 rounded-[11px] object-cover" /><b className="text-xl font-extrabold tracking-[-.7px]">StudyStation</b></span>
           <span className="text-xs font-bold text-[#8b8593]">Step {step + 1} of 3</span>
         </header>
 
@@ -128,7 +129,7 @@ export function OnboardingWizard({
             <>
               <span className="grid size-12 place-items-center rounded-2xl bg-[#eeeaff] text-[#7259e8]"><GraduationCap className="size-6" /></span>
               <p className="mt-6 text-[10px] font-black uppercase tracking-[.16em] text-[#7259e8]">Welcome to your study space</p>
-              <h1 className="mt-2 text-[30px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[36px]">Let’s make Noteva yours.</h1>
+              <h1 className="mt-2 text-[30px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[36px]">Let’s make StudyStation yours.</h1>
               <p className="mt-2 max-w-lg text-sm leading-6 text-[#777180]">Add a little academic context so you can keep your courses and study materials organized. You can skip optional details.</p>
               <form action={formAction} className="mt-7 space-y-4 rounded-[26px] border border-[#e8e4ef] bg-white p-5 shadow-[0_20px_70px_rgba(41,31,77,.08)] sm:p-7">
                 <input type="hidden" name="step" value="0" />

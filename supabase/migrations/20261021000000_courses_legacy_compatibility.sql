@@ -1,4 +1,4 @@
--- Add course fields that may be missing from pre-existing Noteva tables.
+-- Add course fields that may be missing from pre-existing StudyStation tables.
 -- CREATE TABLE IF NOT EXISTS in Stage 4 does not upgrade an existing table.
 alter table public.courses
   add column if not exists color text not null default '#7259e8',

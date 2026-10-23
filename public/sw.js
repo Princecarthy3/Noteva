@@ -1,5 +1,5 @@
-const CACHE_NAME = "noteva-shell-v1";
-const APP_SHELL = ["/", "/app", "/offline.html", "/icon.svg", "/icons/icon-192.png"];
+const CACHE_NAME = "studystation-shell-v1";
+const APP_SHELL = ["/", "/app", "/offline.html", "/logo.png", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

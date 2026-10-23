@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     const answer = await openRouterChat([
       {
         role: "system",
-        content: "You are Noteva, a precise and encouraging university tutor. Answer only from the supplied lecture context when available. Explain ideas clearly, use a short analogy when helpful, and end with a compact citation in square brackets. If the context is insufficient, say so rather than inventing details.",
+        content: "You are StudyStation, a precise and encouraging university tutor. Answer only from the supplied lecture context when available. Explain ideas clearly, use a short analogy when helpful, and end with a compact citation in square brackets. If the context is insufficient, say so rather than inventing details.",
       },
       {
         role: "user",

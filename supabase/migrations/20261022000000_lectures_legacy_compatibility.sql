@@ -1,4 +1,4 @@
--- Migration: Add missing lecture columns and remove legacy check constraints from pre-existing Noteva tables.
+-- Migration: Add missing lecture columns and remove legacy check constraints from pre-existing StudyStation tables.
 -- CREATE TABLE IF NOT EXISTS in Stage 4 does not add columns or drop old constraints if public.lectures already existed.
 
 -- 1. Ensure all required lecture columns exist
