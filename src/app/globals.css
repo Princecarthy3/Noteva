@@ -141,6 +141,11 @@ html[data-theme="dark"] .install-card > div:last-of-type p {
   color: #b9b3c7;
 }
 
+html[data-theme="dark"] .review-modal-card {
+  border-color: #393648;
+  background-color: #1b1926;
+}
+
 .step-number {
   display: inline-grid;
   width: 20px;

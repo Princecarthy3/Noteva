@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowLeft,
@@ -93,6 +92,7 @@ import { QuizProgressView } from "@/components/quiz-progress";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AudioPlayer } from "@/components/audio-player";
 import { LectureCaptureModal } from "@/components/lecture-capture-modal";
+import { ReviewModal } from "@/components/review-section";
 import { exportNoteToPdf } from "@/lib/pdf-export";
 
 type View =
@@ -201,6 +201,7 @@ export function AppShell({
   const [interimTranscript, setInterimTranscript] = useState("");
   const [captionStatus, setCaptionStatus] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [autoOpenLectureId, setAutoOpenLectureId] = useState<string | null>(null);
   const clearAutoOpenLecture = useCallback(() => setAutoOpenLectureId(null), []);
 
@@ -631,12 +632,16 @@ export function AppShell({
           </div>
         </button>
 
-        <Link
-          href="/#students"
+        <button
+          type="button"
+          onClick={() => {
+            setReviewModalOpen(true);
+            setSidebarOpen(false);
+          }}
           className="mt-3 flex items-center gap-2 rounded-lg px-2.5 py-2 text-[10px] font-bold text-white/55 transition hover:bg-white/5 hover:text-white"
         >
           <Star className="size-3.5 text-[#ffd768]" /> Share a StudyStation review
-        </Link>
+        </button>
 
         <div className="mt-3 flex gap-1">
           <button
@@ -979,6 +984,8 @@ export function AppShell({
           </div>
         </div>
       )}
+
+      {reviewModalOpen && <ReviewModal onClose={() => setReviewModalOpen(false)} />}
 
       {toast && (
         <div className="fixed bottom-24 left-1/2 z-[100] flex w-[calc(100%-32px)] max-w-md -translate-x-1/2 items-start gap-3 rounded-2xl bg-[#17132d] px-4 py-3.5 text-white shadow-2xl lg:bottom-7">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
-import { MessageSquareQuote, Send, Star } from "lucide-react";
+import { MessageSquareQuote, Send, Star, X } from "lucide-react";
 
 type StudentReview = {
   id: string;
@@ -24,11 +24,8 @@ function Stars({ rating, size = "size-4" }: { rating: number; size?: string }) {
 
 export function ReviewSection() {
   const [reviews, setReviews] = useState<StudentReview[]>([]);
-  const [rating, setRating] = useState(5);
-  const [reviewText, setReviewText] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -51,36 +48,6 @@ export function ReviewSection() {
       active = false;
     };
   }, []);
-
-  async function submitReview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (saving) return;
-    setSaving(true);
-    setMessage("");
-    setError(false);
-    try {
-      const response = await fetch("/api/reviews", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating, review: reviewText }),
-      });
-      const body = await response.json() as { review?: StudentReview; error?: string };
-      if (response.status === 401) {
-        setMessage("Sign in to share a review.");
-        setError(true);
-        return;
-      }
-      if (!response.ok || !body.review) throw new Error(body.error || "Your review could not be saved.");
-      setReviews((current) => [body.review!, ...current.filter((item) => item.id !== body.review!.id)].slice(0, 12));
-      setReviewText("");
-      setMessage("Thanks for sharing your experience. Your review is now on the page.");
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "Your review could not be saved.");
-      setError(true);
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <section id="students" className="px-5 py-24 lg:py-32">
@@ -118,41 +85,118 @@ export function ReviewSection() {
           </div>
         )}
 
-        <form onSubmit={submitReview} className="mx-auto mt-10 max-w-2xl rounded-[26px] border border-[#e9e5ef] bg-white p-5 shadow-[0_18px_55px_rgba(39,29,74,.07)] sm:p-7">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">Write a review</p>
-              <h3 className="mt-1 text-lg font-black text-[#17132d]">How has StudyStation helped you?</h3>
-            </div>
-            <div role="radiogroup" aria-label="Your star rating" className="flex items-center gap-1">
-              {Array.from({ length: 5 }, (_, index) => {
-                const value = index + 1;
-                return (
-                  <button key={value} type="button" role="radio" aria-checked={rating === value} aria-label={`${value} star${value === 1 ? "" : "s"}`} onClick={() => setRating(value)} className="rounded-md p-1 text-[#f5a623] transition hover:scale-110 focus-visible:outline-[#7259e8]">
-                    <Star className={`size-6 ${value <= rating ? "fill-current" : "text-[#d7d2e0]"}`} />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <label className="mt-4 block text-xs font-bold text-[#625b6d]">
-            Your review
-            <textarea value={reviewText} onChange={(event) => setReviewText(event.target.value)} minLength={10} maxLength={600} required rows={4} placeholder="Tell other students what you like or what helped you study…" className="mt-2 w-full resize-y rounded-xl border border-[#e5e1eb] bg-white p-3 text-sm font-medium text-[#302a40] outline-none placeholder:text-[#aaa4b1] focus:border-[#a99aed]" />
-          </label>
-          <div className="mt-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <span className="text-[10px] text-[#8a8494]">{reviewText.length}/600 · One review per account; you can update it anytime.</span>
-            <button type="submit" disabled={saving || reviewText.trim().length < 10} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white transition hover:bg-[#6048d5] disabled:opacity-50">
-              <Send className="size-3.5" /> {saving ? "Sharing…" : "Share review"}
-            </button>
-          </div>
-          {message && (
-            <p role={error ? "alert" : "status"} className={`mt-4 rounded-xl px-3 py-2.5 text-xs leading-5 ${error ? "bg-[#fff1ef] text-[#a44e48]" : "bg-[#e8f7ef] text-[#2f946f]"}`}>
-              {message}
-              {error && message.startsWith("Sign in") && <>{" "}<Link className="font-extrabold underline" href="/auth/login">Sign in</Link></>}
-            </p>
-          )}
-        </form>
+        <ReviewComposer className="mx-auto mt-10 max-w-2xl" />
       </div>
     </section>
+  );
+}
+
+export function ReviewComposer({ className = "" }: { className?: string }) {
+  const [rating, setRating] = useState(5);
+  const [reviewText, setReviewText] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function submitReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setMessage("");
+    setError(false);
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, review: reviewText }),
+      });
+      const body = await response.json() as { error?: string };
+      if (response.status === 401) {
+        setMessage("Sign in to share a review.");
+        setError(true);
+        return;
+      }
+      if (!response.ok) throw new Error(body.error || "Your review could not be saved.");
+      setReviewText("");
+      setMessage("Thanks for sharing your experience. Your review is now on the page.");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Your review could not be saved.");
+      setError(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submitReview} className={`rounded-[26px] border border-[#e9e5ef] bg-white p-5 shadow-[0_18px_55px_rgba(39,29,74,.07)] sm:p-7 ${className}`}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">Write a review</p>
+          <h3 className="mt-1 text-lg font-black text-[#17132d]">How has StudyStation helped you?</h3>
+        </div>
+        <div role="radiogroup" aria-label="Your star rating" className="flex items-center gap-1">
+          {Array.from({ length: 5 }, (_, index) => {
+            const value = index + 1;
+            return (
+              <button key={value} type="button" role="radio" aria-checked={rating === value} aria-label={`${value} star${value === 1 ? "" : "s"}`} onClick={() => setRating(value)} className="rounded-md p-1 text-[#f5a623] transition hover:scale-110 focus-visible:outline-[#7259e8]">
+                <Star className={`size-6 ${value <= rating ? "fill-current" : "text-[#d7d2e0]"}`} />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <label className="mt-4 block text-xs font-bold text-[#625b6d]">
+        Your review
+        <textarea value={reviewText} onChange={(event) => setReviewText(event.target.value)} minLength={10} maxLength={600} required rows={4} placeholder="Tell other students what you like or what helped you study…" className="mt-2 w-full resize-y rounded-xl border border-[#e5e1eb] bg-white p-3 text-sm font-medium text-[#302a40] outline-none placeholder:text-[#aaa4b1] focus:border-[#a99aed]" />
+      </label>
+      <div className="mt-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <span className="text-[10px] text-[#8a8494]">{reviewText.length}/600 · One review per account; you can update it anytime.</span>
+        <button type="submit" disabled={saving || reviewText.trim().length < 10} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white transition hover:bg-[#6048d5] disabled:opacity-50">
+          <Send className="size-3.5" /> {saving ? "Sharing…" : "Share review"}
+        </button>
+      </div>
+      {message && (
+        <p role={error ? "alert" : "status"} className={`mt-4 rounded-xl px-3 py-2.5 text-xs leading-5 ${error ? "bg-[#fff1ef] text-[#a44e48]" : "bg-[#e8f7ef] text-[#2f946f]"}`}>
+          {message}
+          {error && message.startsWith("Sign in") && <>{" "}<Link className="font-extrabold underline" href="/auth/login">Sign in</Link></>}
+        </p>
+      )}
+    </form>
+  );
+}
+
+export function ReviewModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="review-modal-overlay fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-[#17132d]/60 p-4 backdrop-blur-md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="workspace-review-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="review-modal-card my-auto w-full max-w-xl rounded-[28px] border border-white/70 bg-white p-5 shadow-[0_30px_100px_rgba(14,10,34,.32)] sm:p-7">
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">Student voices</p>
+            <h2 id="workspace-review-title" className="mt-1 text-xl font-black text-[#17132d]">Share your StudyStation review</h2>
+            <p className="mt-1 text-xs leading-5 text-[#7d7789]">Your rating and feedback will appear on the public landing page.</p>
+          </div>
+          <button type="button" onClick={onClose} className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f3f0f7] text-[#6b6478] transition hover:bg-[#eae6f2]" aria-label="Close review">
+            <X className="size-4" />
+          </button>
+        </header>
+        <ReviewComposer className="mt-5 border-0 p-0 shadow-none" />
+      </section>
+    </div>
   );
 }
