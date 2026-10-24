@@ -37,7 +37,7 @@ export async function geminiGenerateJson(prompt: string, options?: {
         temperature: options?.temperature ?? 0.2,
         maxOutputTokens: options?.maxOutputTokens ?? 8192,
         responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: "minimal" },
+        thinkingConfig: { thinkingLevel: model.includes("flash-lite") ? "minimal" : "low" },
       },
     }),
     signal: AbortSignal.timeout(30_000),
