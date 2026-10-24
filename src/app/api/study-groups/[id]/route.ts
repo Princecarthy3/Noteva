@@ -209,7 +209,7 @@ export async function POST(request: Request, context: RouteContext) {
     return fail("The group request was not valid JSON.");
   }
   const { data: group, error: groupError } = await auth.supabase.from("study_groups")
-    .select("id, visibility")
+    .select("id, name, visibility")
     .eq("id", id)
     .maybeSingle();
   if (groupError) return fail("Study group could not be loaded.", 500);
@@ -320,6 +320,19 @@ export async function POST(request: Request, context: RouteContext) {
       .select("id, title, starts_at, ends_at, status, notes")
       .single();
     if (error || !data) return fail("The group call could not be started. Check that the Stage 10 migration is applied.", 503);
+    const { data: members, error: membersError } = await admin.from("group_members")
+      .select("user_id")
+      .eq("group_id", id)
+      .neq("user_id", auth.user.id);
+    if (!membersError && members?.length) {
+      const { error: notificationError } = await admin.from("notifications").insert(members.map((member) => ({
+        user_id: member.user_id,
+        type: "study_group_call",
+        title: "Group call started",
+        body: `${group.name} has started a group call. [call:${id}:${data.id}]`,
+      })));
+      if (notificationError) console.error("Group call notifications failed", { code: notificationError.code });
+    }
     return NextResponse.json({ session: data }, { status: 201 });
   }
 

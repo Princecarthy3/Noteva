@@ -11,6 +11,7 @@ import {
   Info,
   LoaderCircle,
   LockKeyhole,
+  Mail,
   MessageCircle,
   Paperclip,
   Phone,
@@ -72,7 +73,7 @@ function formatDate(value: string) {
     : new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
 }
 
-export function StudyGroups({ courses, inviteToken }: { courses: Course[]; inviteToken?: string | null }) {
+export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionId }: { courses: Course[]; inviteToken?: string | null; initialGroupId?: string | null; callSessionId?: string | null }) {
   const router = useRouter();
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -94,9 +95,13 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [showGroupTools, setShowGroupTools] = useState(false);
   const [showShareResources, setShowShareResources] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportMessageId, setReportMessageId] = useState<string | null>(null);
   const [resourceToShare, setResourceToShare] = useState("");
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const knownCallSessionIds = useRef<Set<string> | null>(null);
   const visibleGroups = groups.filter((group) => filter === "mine" ? Boolean(group.role) : filter === "discover" ? !group.role && group.visibility === "public" : true);
 
   useEffect(() => {
@@ -133,19 +138,23 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
     try {
       const data = await api<GroupDetail>(`/api/study-groups/${groupId}`, { cache: "no-store" });
       setDetail(data);
+      knownCallSessionIds.current = new Set(data.sessions.map((session) => session.id));
+      if (callSessionId) setCallSession(data.sessions.find((session) => session.id === callSessionId) ?? null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "The group could not be opened.");
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [callSessionId]);
 
   useEffect(() => {
     let active = true;
     async function initialize() {
       try {
         let data = await api<{ groups: Group[] }>("/api/study-groups", { cache: "no-store" });
-        let preferredId = data.groups.find((group) => group.role)?.id ?? "";
+        let preferredId = initialGroupId && data.groups.some((group) => group.id === initialGroupId)
+          ? initialGroupId
+          : data.groups.find((group) => group.role)?.id ?? "";
         if (inviteToken) {
           setNotice("Checking your group invitation…");
           try {
@@ -167,7 +176,11 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
         if (nextId) {
           setDetailLoading(true);
           const groupDetail = await api<GroupDetail>(`/api/study-groups/${nextId}`, { cache: "no-store" });
-          if (active) setDetail(groupDetail);
+          if (active) {
+            setDetail(groupDetail);
+            knownCallSessionIds.current = new Set(groupDetail.sessions.map((session) => session.id));
+            if (callSessionId) setCallSession(groupDetail.sessions.find((session) => session.id === callSessionId) ?? null);
+          }
         }
       } catch (loadError) {
         if (active) {
@@ -183,7 +196,7 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
     }
     void initialize();
     return () => { active = false; };
-  }, [inviteToken, router]);
+  }, [callSessionId, initialGroupId, inviteToken, router]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -197,6 +210,15 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
         if (!active) return;
         setGroups(groupData.groups);
         setDetail(detailData);
+        const knownCalls = knownCallSessionIds.current;
+        if (knownCalls) {
+          const newCall = detailData.sessions.find((session) => session.title === "Instant group call"
+            && session.status === "scheduled"
+            && Date.parse(session.ends_at) > Date.now()
+            && !knownCalls.has(session.id));
+          if (newCall) setCallSession(newCall);
+        }
+        knownCallSessionIds.current = new Set(detailData.sessions.map((session) => session.id));
       } catch {
         return;
       }
@@ -336,6 +358,7 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
   async function startGroupCall() {
     const result = await groupAction("start_call") as { session?: GroupSession } | null;
     if (result?.session) {
+      knownCallSessionIds.current?.add(result.session.id);
       setCallSession(result.session);
       setNotice("Starting your group call. Your microphone and camera begin muted.");
     }
@@ -361,12 +384,13 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
     }
   }
 
-  async function reportMessage(messageId?: string) {
-    const reason = window.prompt("Briefly describe the concern (10–1,000 characters).");
-    if (!reason) return;
-    const result = await groupAction("report", { messageId, reason });
-    if (result) setNotice("Your report was submitted for review.");
+  function reportMessage(messageId?: string) {
+    setReportMessageId(messageId ?? null);
+    setReportDetails("");
+    setShowReport(true);
   }
+
+  const reportMailto = `mailto:princemaccarthy006@gmail.com?subject=${encodeURIComponent(`StudyStation report: ${detail?.group.name ?? "Study group"}`)}&body=${encodeURIComponent(`Please describe the issue:\n${reportDetails.trim()}\n\nGroup: ${detail?.group.name ?? "Unknown"}\nGroup ID: ${selectedId || "Unknown"}${reportMessageId ? `\nMessage ID: ${reportMessageId}` : ""}`)}`;
 
   async function openResource(resource: SharedResource) {
     try {
@@ -437,6 +461,7 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
       </section>
     </div>
     {showGroupInfo && detail && <div className="fixed inset-0 z-[110] grid place-items-center bg-[#17132d]/50 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setShowGroupInfo(false);}}><section role="dialog" aria-modal="true" aria-labelledby="group-info-title" className="w-full max-w-lg overflow-hidden rounded-[24px] bg-white shadow-2xl"><header className="flex items-center justify-between border-b border-[#eeeaf2] px-5 py-4"><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">GROUP INFO</p><h2 id="group-info-title" className="mt-1 text-base font-extrabold">{detail.group.name}</h2></div><button type="button" onClick={() => setShowGroupInfo(false)} aria-label="Close group information" className="grid size-9 place-items-center rounded-xl bg-[#f4f2f7]"><X className="size-4" /></button></header><div className="space-y-4 p-5"><div><p className="text-[9px] font-extrabold uppercase tracking-wide text-[#8a8494]">DESCRIPTION</p><p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-[#4e4859]">{detail.group.description || "No group description has been added."}</p></div><div className="flex items-center justify-between rounded-xl bg-[#f7f5ff] p-3"><span><b className="block text-xs">{detail.memberCount ?? detail.members.length} members</b><span className="text-[9px] capitalize text-[#8a8494]">{detail.group.visibility} group</span></span><button type="button" onClick={() => {setShowGroupInfo(false); setShowMembers(true);}} className="text-[10px] font-extrabold text-[#7259e8]">View members</button></div></div></section></div>}
+    {showReport && detail && <div className="fixed inset-0 z-[120] grid place-items-center bg-[#17132d]/55 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setShowReport(false);}}><section role="dialog" aria-modal="true" aria-labelledby="report-group-title" className="w-full max-w-lg overflow-hidden rounded-[26px] border border-white/60 bg-white shadow-[0_24px_80px_rgba(23,19,45,.28)]"><header className="flex items-start justify-between gap-4 bg-gradient-to-br from-[#f5f2ff] to-white px-5 py-5 sm:px-6"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-[#7259e8] shadow-sm"><Mail className="size-5" /></span><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">CONTACT STUDYSTATION</p><h2 id="report-group-title" className="mt-1 text-base font-extrabold text-[#17132d]">Report a concern</h2><p className="mt-1 text-[10px] leading-4 text-[#817a8d]">Your email app will open with the group details included.</p></div></div><button type="button" onClick={() => setShowReport(false)} aria-label="Close report form" className="grid size-8 shrink-0 place-items-center rounded-lg bg-white text-[#777080]"><X className="size-4" /></button></header><div className="space-y-4 px-5 py-5 sm:px-6"><div className="rounded-xl border border-[#eeeaf5] bg-[#fbfaff] p-3"><p className="text-[9px] font-bold uppercase tracking-wide text-[#918b9a]">Sending to</p><a href="mailto:princemaccarthy006@gmail.com" className="mt-1 block break-all text-xs font-extrabold text-[#5d47bd]">princemaccarthy006@gmail.com</a></div><label className="block text-[10px] font-extrabold text-[#5d5768]">WHAT HAPPENED?<textarea value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} maxLength={3000} rows={5} placeholder="Tell us what happened and what you were doing…" className="mt-1.5 w-full resize-y rounded-xl border border-[#e7e3ec] p-3 text-xs font-medium leading-5 outline-none focus:border-[#aa9af0]" /></label><p className="text-[9px] leading-4 text-[#8a8494]">Group: {detail.group.name}{reportMessageId ? " · Message report" : ""}</p><div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setShowReport(false)} className="h-10 rounded-xl border border-[#e7e3ec] px-4 text-[10px] font-extrabold text-[#655d74]">Cancel</button><a href={reportMailto} onClick={(event) => {if (!reportDetails.trim()) {event.preventDefault(); setError("Please describe the issue before sending your report.");}}} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#7259e8] px-4 text-[10px] font-extrabold text-white"><Mail className="size-3.5" /> Open email app</a></div></div></section></div>}
     {showSession && detail && <div className="fixed inset-0 z-[110] grid place-items-center bg-[#17132d]/50 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setShowSession(false);}}><section role="dialog" aria-modal="true" aria-labelledby="schedule-session-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[24px] bg-white shadow-2xl"><header className="flex items-center justify-between border-b border-[#eeeaf2] px-5 py-4"><h2 id="schedule-session-title" className="text-sm font-extrabold">Study sessions</h2><button type="button" onClick={() => setShowSession(false)} aria-label="Close sessions" className="grid size-9 place-items-center rounded-xl bg-[#f4f2f7]"><X className="size-4" /></button></header><div className="space-y-4 p-5">{["owner", "moderator"].includes(detail.role ?? "") && <form onSubmit={createSession} className="space-y-2"><input required name="title" minLength={2} maxLength={160} placeholder="Session title" className="h-10 w-full rounded-lg border border-[#e8e4ed] px-3 text-xs" /><label className="block text-[9px] font-bold text-[#8a8494]">START<input required name="startsAt" type="datetime-local" className="mt-1 h-10 w-full rounded-lg border border-[#e8e4ed] px-3 text-xs" /></label><label className="block text-[9px] font-bold text-[#8a8494]">END<input required name="endsAt" type="datetime-local" className="mt-1 h-10 w-full rounded-lg border border-[#e8e4ed] px-3 text-xs" /></label><textarea name="notes" maxLength={2000} rows={2} placeholder="Agenda (optional)" className="w-full rounded-lg border border-[#e8e4ed] p-3 text-xs" /><button className="h-10 w-full rounded-lg bg-[#17132d] text-xs font-extrabold text-white">Schedule session</button></form>}<div className="space-y-2">{detail.sessions.filter((session) => session.status === "scheduled").map((session) => {const startsAt = Date.parse(session.starts_at); const endsAt = Date.parse(session.ends_at); const isCallTime = Number.isFinite(startsAt) && Number.isFinite(endsAt) && callClock >= startsAt - 30 * 60 * 1000 && callClock < endsAt; return <div key={session.id} className="rounded-xl bg-[#f7f5ff] p-3"><b className="block break-words text-xs">{session.title}</b><p className="mt-1 text-[10px] text-[#726b80]">{formatDate(session.starts_at)} – {formatDate(session.ends_at)}</p>{session.notes && <p className="mt-1 text-[10px] leading-4 text-[#898391]">{session.notes}</p>}{detail.callEnabled && isCallTime && <button type="button" onClick={() => setCallSession(session)} className="mt-2 rounded-lg bg-[#7259e8] px-3 py-2 text-[9px] font-extrabold text-white">Join call</button>}{["owner", "moderator"].includes(detail.role ?? "") && <button type="button" onClick={() => void groupAction("cancel_session", { text: session.id })} className="mt-2 block text-[9px] font-bold text-[#a44e48]">Cancel session</button>}</div>;})}{detail.sessions.every((session) => session.status !== "scheduled") && <p className="py-3 text-center text-[10px] text-[#8a8494]">No upcoming sessions scheduled.</p>}</div></div></section></div>}
     {showShareResources && detail && <div className="fixed inset-0 z-[110] grid place-items-center bg-[#17132d]/50 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setShowShareResources(false);}}><section role="dialog" aria-modal="true" aria-labelledby="share-resources-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[24px] bg-white shadow-2xl"><header className="flex items-center justify-between border-b border-[#eeeaf2] px-5 py-4"><h2 id="share-resources-title" className="text-sm font-extrabold">Share resources</h2><button type="button" onClick={() => setShowShareResources(false)} aria-label="Close shared resources" className="grid size-9 place-items-center rounded-xl bg-[#f4f2f7]"><X className="size-4" /></button></header><div className="space-y-4 p-5">{detail.ownResources?.length ? <div className="flex gap-2"><select value={resourceToShare} onChange={(event) => setResourceToShare(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#e8e4ed] bg-white px-2 text-[10px]"><option value="">Choose a saved resource or note</option>{detail.ownResources.map((resource) => <option key={resource.id} value={resource.id}>{resource.title} · {resource.resource_type}</option>)}</select><button type="button" disabled={!resourceToShare} onClick={async () => {const isNote = resourceToShare.startsWith("note:"); const result = await groupAction(isNote ? "share_note" : "share_resource", { resourceId: isNote ? resourceToShare.slice(5) : resourceToShare }); if (result) {setResourceToShare(""); setShowShareResources(false);}}} className="h-10 rounded-lg bg-[#7259e8] px-4 text-[10px] font-extrabold text-white disabled:opacity-50">Share</button></div> : <p className="rounded-xl bg-[#f7f5ff] p-3 text-[10px] leading-4 text-[#8a8494]">Your saved resources and generated notes will appear here when available.</p>}<div className="space-y-2">{detail.resources.map((resource) => <div key={resource.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#f7f6f9] px-3 py-2"><span className="min-w-0"><b className="block truncate text-[10px]">{resource.title}</b><span className="text-[8px] text-[#938d9b]">{resource.resourceType}</span></span><span className="flex shrink-0 items-center gap-3"><button type="button" onClick={() => {setShowShareResources(false); void openResource(resource);}} className="text-[9px] font-bold text-[#5d47bd]">Open</button>{resource.isMine && <button type="button" onClick={async () => {const result = await groupAction("unshare_resource", { resourceId: resource.id }); if (result) setShowShareResources(false);}} className="text-[9px] font-bold text-[#a44e48]">Unshare</button>}</span></div>)}{!detail.resources.length && <p className="text-[10px] text-[#8a8494]">No resources have been shared yet.</p>}</div></div></section></div>}
     {showMembers && detail && <div className="fixed inset-0 z-[110] grid place-items-center bg-[#17132d]/50 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setShowMembers(false);}}><section role="dialog" aria-modal="true" aria-labelledby="group-members-title" className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-[24px] bg-white shadow-2xl"><header className="flex items-center justify-between border-b border-[#eeeaf2] px-5 py-4"><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">{detail.group.name}</p><h2 id="group-members-title" className="mt-1 text-base font-extrabold">{detail.memberCount ?? detail.members.length} members</h2></div><button type="button" onClick={() => setShowMembers(false)} aria-label="Close members" className="grid size-9 place-items-center rounded-xl bg-[#f4f2f7]"><X className="size-4" /></button></header><ul className="max-h-[65vh] divide-y divide-[#f0edf4] overflow-y-auto px-5">{detail.members.map((member) => <li key={member.userId} className="flex items-center gap-3 py-3"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#eeeaff] text-xs font-black text-[#7259e8]">{member.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span><span className="min-w-0 flex-1"><b className="block truncate text-xs">{member.isSelf ? `${member.name} (You)` : member.name}</b><span className="mt-0.5 block text-[9px] capitalize text-[#8a8494]">{member.role} · Joined {formatDate(member.joinedAt)}</span></span>{detail.role === "owner" && !member.isSelf && member.role !== "owner" ? <span className="flex items-center gap-2"><select aria-label={`Role for ${member.name}`} value={member.role} onChange={(event) => void groupAction("set_member_role", { targetUserId: member.userId, newRole: event.target.value })} className="h-8 rounded-lg border border-[#e8e4ed] bg-white px-2 text-[9px] capitalize"><option value="member">Member</option><option value="moderator">Moderator</option></select><button type="button" onClick={() => {if (window.confirm(`Remove ${member.name} from this group?`)) void groupAction("remove_member", { targetUserId: member.userId });}} className="text-[9px] font-bold text-[#a44e48]">Remove</button></span> : <span className="rounded-full bg-[#f4f2f7] px-2.5 py-1 text-[8px] font-bold capitalize text-[#716a7c]">{member.role}</span>}</li>)}</ul><footer className="border-t border-[#eeeaf2] px-5 py-3 text-[9px] text-[#8a8494]">Only current group members can view this list.</footer></section></div>}

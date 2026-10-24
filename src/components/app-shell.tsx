@@ -281,8 +281,8 @@ export function AppShell({
         const next = data.notifications;
         const previousIds = notifiedIds.current;
         if (previousIds) {
-          const hasNewJoin = next.some((item) => item.type === "study_group_join" && !previousIds.has(item.id));
-          if (hasNewJoin) {
+          const hasNewAlert = next.some((item) => ["study_group_join", "study_group_call"].includes(item.type) && !previousIds.has(item.id));
+          if (hasNewAlert) {
             try {
               const audio = notificationAudioRef.current;
               if (!audio || audio.state !== "running") throw new Error("Notification sound is not enabled.");
@@ -299,6 +299,15 @@ export function AppShell({
               oscillator.stop(audio.currentTime + 0.23);
             } catch {}
           }
+          const newCall = previousIds
+            ? next.find((item) => item.type === "study_group_call" && !previousIds.has(item.id))
+            : next.find((item) => item.type === "study_group_call" && !item.read_at
+              && Date.now() - Date.parse(item.created_at) < 2 * 60 * 60 * 1000);
+          const callInfo = newCall?.body.match(/\[call:([0-9a-f-]{36}):([0-9a-f-]{36})\]/i);
+          if (callInfo) {
+            router.push(`/app?view=study-groups&group=${callInfo[1]}&call=${callInfo[2]}`);
+            setView("study-groups");
+          }
         }
         notifiedIds.current = new Set(next.map((item) => item.id));
         setNotifications(next);
@@ -307,7 +316,7 @@ export function AppShell({
     void loadNotifications();
     const interval = window.setInterval(() => void loadNotifications(), 8000);
     return () => { active = false; window.clearInterval(interval); };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!toast) return;
@@ -809,9 +818,14 @@ export function AppShell({
 
                   <div className="mt-3 max-h-56 space-y-2 overflow-y-auto hide-scrollbar">
                     {notifications.length ? notifications.slice(0, 8).map((item) => (
-                      <button type="button" key={item.id} onClick={() => { setNotificationsOpen(false); navigate("study-groups"); }} className={`block w-full rounded-xl border p-2.5 text-left ${item.read_at ? "border-[#eeeaf5] bg-[#faf9fd]" : "border-[#dcd4ff] bg-[#f5f2ff]"}`}>
+                      <button type="button" key={item.id} onClick={() => {
+                        setNotificationsOpen(false);
+                        const callInfo = item.type === "study_group_call" ? item.body.match(/\[call:([0-9a-f-]{36}):([0-9a-f-]{36})\]/i) : null;
+                        if (callInfo) router.push(`/app?view=study-groups&group=${callInfo[1]}&call=${callInfo[2]}`);
+                        navigate("study-groups");
+                      }} className={`block w-full rounded-xl border p-2.5 text-left ${item.read_at ? "border-[#eeeaf5] bg-[#faf9fd]" : "border-[#dcd4ff] bg-[#f5f2ff]"}`}>
                         <p className="text-[11px] font-extrabold text-[#17132d]">{item.title}</p>
-                        <p className="mt-0.5 break-words text-[9px] leading-4 text-[#777183]">{item.body}</p>
+                        <p className="mt-0.5 break-words text-[9px] leading-4 text-[#777183]">{item.body.replace(/\s*\[call:[0-9a-f-]{36}:[0-9a-f-]{36}\]/i, "")}</p>
                         <time className="mt-1 block text-[8px] font-bold text-[#96909f]">{new Date(item.created_at).toLocaleString()}</time>
                       </button>
                     )) : <p className="py-3 text-center text-[10px] text-[#868093]">No new notifications.</p>}
@@ -948,6 +962,8 @@ export function AppShell({
                 .filter((course) => !course.archived)
                 .map(({ id, title, code }) => ({ id, title, code }))}
               inviteToken={params.get("invite")}
+              initialGroupId={params.get("group")}
+              callSessionId={params.get("call")}
             />
           )}
 
