@@ -13,7 +13,7 @@ const sansFont = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000"),
+  metadataBase: new URL(process.env.APP_URL?.trim() || "http://localhost:3000"),
   title: {
     default: "StudyStation — Turn lectures into learning",
     template: "%s · StudyStation",

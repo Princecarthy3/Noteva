@@ -13,7 +13,7 @@ export function getSupabaseConfigurationError() {
 }
 
 export function getAuthRedirectUrl(path: string, requestOrigin?: string | null) {
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const configuredUrl = process.env.APP_URL?.trim();
   const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
     : process.env.VERCEL_URL
@@ -33,7 +33,7 @@ export function getAuthRedirectUrl(path: string, requestOrigin?: string | null) 
       (process.env.NODE_ENV === "production" ? null : "http://localhost:3000");
 
   if (!baseUrl) {
-    throw new Error("Set NEXT_PUBLIC_APP_URL to the verified public app URL before enabling authentication email links.");
+    throw new Error("Set APP_URL to the verified public app URL before enabling authentication email links.");
   }
 
   const parsedUrl = new URL(baseUrl);
@@ -41,7 +41,7 @@ export function getAuthRedirectUrl(path: string, requestOrigin?: string | null) 
     parsedUrl.protocol !== "https:" &&
     !(parsedUrl.protocol === "http:" && parsedUrl.hostname === "localhost")
   ) {
-    throw new Error("NEXT_PUBLIC_APP_URL must use HTTPS, except for local development.");
+    throw new Error("APP_URL must use HTTPS, except for local development.");
   }
 
   return new URL(path, parsedUrl).toString();

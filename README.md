@@ -56,13 +56,13 @@ Stage 5 uses Supabase email/password auth, with Google sign-in and registration 
 10. `20261022000000_lectures_legacy_compatibility.sql` to upgrade lecture fields (`mime_type`, `storage_path`, `processing_error`) on pre-existing tables
 11. `20261023000000_student_reviews.sql` before loading or submitting public student reviews
 
-For local verification, set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_APP_URL=http://localhost:3000` in `.env.local`. In Supabase Auth settings:
+For local verification, set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `APP_URL=http://localhost:3000` in `.env.local`. In Supabase Auth settings:
 
 - Enable email/password sign-in and choose whether email confirmation is required.
 - Enable Google as a provider in Supabase Auth and configure its OAuth client credentials and redirect URI.
 - Set the local Site URL to `http://localhost:3000`.
 - Add `http://localhost:3000/auth/callback` to the redirect URL allowlist.
-- For deployment, set `NEXT_PUBLIC_APP_URL` to the verified HTTPS app URL and allowlist its `/auth/callback` URL.
+- For deployment, set `APP_URL` to the verified HTTPS app URL and allowlist its `/auth/callback` URL.
 
 Registration, Google OAuth, and password recovery use that callback route. If confirmation is enabled, the student completes onboarding after opening the verification email. Password-reset requests always show a neutral response so they do not reveal whether an email is registered. Both email/password and Google are available on the login and registration pages.
 
