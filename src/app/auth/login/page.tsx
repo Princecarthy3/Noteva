@@ -29,6 +29,8 @@ export default async function LoginPage({
           ? "Your password has been updated. Sign in with your new password."
           : error === "setup"
             ? "Authentication settings are missing. Ask the app administrator to configure Supabase."
+            : error === "oauth"
+              ? "Google sign-in was cancelled or failed. Try again, or sign in with email."
             : error === "link" || error === "missing"
               ? "That sign-in or verification link is invalid or expired. Try signing in again or request a fresh link."
               : undefined}

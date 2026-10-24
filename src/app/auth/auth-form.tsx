@@ -10,6 +10,7 @@ import {
   updatePassword,
   type AuthActionState,
 } from "@/app/auth/actions";
+import { createClient } from "@/lib/supabase/client";
 
 type AuthMode = "login" | "register" | "forgot" | "update";
 
@@ -26,6 +27,36 @@ export function AuthForm({ mode, notice, setupMessage, nextPath = "/app" }: { mo
   const [state, formAction, pending] = useActionState(action, initialState);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [oauthPending, setOauthPending] = useState(false);
+  const [oauthError, setOauthError] = useState("");
+
+  async function continueWithGoogle() {
+    if (oauthPending || setupMessage) return;
+    setOauthPending(true);
+    setOauthError("");
+    try {
+      const supabase = createClient();
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath || "/app")}`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          queryParams: {
+            access_type: "offline",
+            prompt: "select_account",
+          },
+        },
+      });
+      if (error) {
+        setOauthError(error.message || "Google sign-in could not start. Try again.");
+        setOauthPending(false);
+      }
+      // On success Supabase redirects the browser away.
+    } catch (cause) {
+      setOauthError(cause instanceof Error ? cause.message : "Google sign-in is unavailable right now.");
+      setOauthPending(false);
+    }
+  }
 
   const title = {
     login: "Welcome back",
@@ -51,9 +82,40 @@ export function AuthForm({ mode, notice, setupMessage, nextPath = "/app" }: { mo
       {notice && <p className="mt-5 rounded-xl border border-[#d7eee2] bg-[#effaf4] px-4 py-3 text-sm leading-5 text-[#26684b]" role="status">{notice}</p>}
       {state.success && <p className="mt-5 rounded-xl border border-[#d7eee2] bg-[#effaf4] px-4 py-3 text-sm leading-5 text-[#26684b]" role="status">{state.success}</p>}
       {state.error && <p className="mt-5 rounded-xl border border-[#f2d5d2] bg-[#fff4f2] px-4 py-3 text-sm leading-5 text-[#9b3f38]" role="alert">{state.error}</p>}
+      {oauthError && <p className="mt-5 rounded-xl border border-[#f2d5d2] bg-[#fff4f2] px-4 py-3 text-sm leading-5 text-[#9b3f38]" role="alert">{oauthError}</p>}
 
       {!(mode === "register" && state.success) && !(mode === "forgot" && state.success) && (
-        <form action={formAction} className="mt-6 space-y-4">
+        <>
+      {(mode === "login" || mode === "register") && (
+        <div className="mt-6 space-y-4">
+          <button
+            type="button"
+            onClick={() => void continueWithGoogle()}
+            disabled={oauthPending || Boolean(setupMessage)}
+            className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#e5e1ec] bg-white px-5 text-sm font-extrabold text-[#302a40] shadow-sm transition hover:bg-[#faf9fd] disabled:cursor-wait disabled:opacity-70"
+          >
+            {oauthPending ? (
+              <><LoaderCircle className="size-4 animate-spin" /> Connecting to Google…</>
+            ) : (
+              <>
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5">
+                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.4c-.3 1.5-1.2 2.8-2.5 3.7v3h4.1c2.4-2.2 3.5-5.5 3.5-8.8z"/>
+                  <path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-4.1-3c-1.1.8-2.6 1.2-3.8 1.2-2.9 0-5.4-2-6.3-4.6H1.5v3.1C3.5 21.3 7.5 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.7 14.7c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2V7.2H1.5C.5 9.1 0 10.5 0 12.5s.5 3.4 1.5 5.3l4.2-3.1z"/>
+                  <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4C17.9 1.2 15.2 0 12 0 7.5 0 3.5 2.7 1.5 6.7l4.2 3.1C6.6 6.8 9.1 4.8 12 4.8z"/>
+                </svg>
+                Continue with Google
+              </>
+            )}
+          </button>
+          <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-[.12em] text-[#a29bb0]">
+            <span className="h-px flex-1 bg-[#ebe7f1]" />
+            or use email
+            <span className="h-px flex-1 bg-[#ebe7f1]" />
+          </div>
+        </div>
+      )}
+        <form action={formAction} className="mt-4 space-y-4">
           {mode === "register" && (
             <label className="block text-xs font-bold text-[#343047]">
               Your name
@@ -103,6 +165,7 @@ export function AuthForm({ mode, notice, setupMessage, nextPath = "/app" }: { mo
             {pending ? <><LoaderCircle className="size-4 animate-spin" /> Please wait…</> : <>{mode === "login" ? "Sign in" : mode === "register" ? "Create account" : mode === "forgot" ? "Send reset link" : "Update password"} <ArrowRight className="size-4" /></>}
           </button>
         </form>
+        </>
       )}
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-xs font-semibold text-[#777180]">
