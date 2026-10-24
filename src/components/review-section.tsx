@@ -7,6 +7,7 @@ import { MessageSquareQuote, Send, Star, X } from "lucide-react";
 type StudentReview = {
   id: string;
   display_name: string;
+  university?: string | null;
   rating: number;
   review: string;
   created_at: string;
@@ -73,6 +74,12 @@ export function ReviewSection() {
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#6c667a]">Share what is helping you learn. Reviews come from signed-in StudyStation users.</p>
         </div>
 
+        {error && message ? (
+          <div className="mt-10 rounded-2xl border border-[#f0c9c4] bg-[#fff7f6] p-6 text-center text-sm text-[#a44e48]">
+            {message}
+          </div>
+        ) : null}
+
         {reviews.length > 0 ? (
           <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {reviews.map((item) => (
@@ -84,16 +91,20 @@ export function ReviewSection() {
                 </div>
                 <div className="mt-6 border-t border-[#f0edf5] pt-4">
                   <p className="text-xs font-black text-[#17132d]">{item.display_name}</p>
-                  <p className="mt-1 text-[10px] font-semibold text-[#837d8f]">StudyStation student · {new Date(item.created_at).toLocaleDateString()}</p>
+                  <p className="mt-1 text-[10px] font-semibold text-[#837d8f]">
+                    {item.university?.trim() || "StudyStation student"}
+                    {" · "}
+                    {new Date(item.created_at).toLocaleDateString()}
+                  </p>
                 </div>
               </article>
             ))}
           </div>
-        ) : (
+        ) : !error ? (
           <div className="mt-10 rounded-2xl border border-dashed border-[#dcd6e8] bg-white/60 p-6 text-center text-sm text-[#777180]">
             Be the first student to share a StudyStation review.
           </div>
-        )}
+        ) : null}
 
         <ReviewComposer className="mx-auto mt-10 max-w-2xl" />
       </div>

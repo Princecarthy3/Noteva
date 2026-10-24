@@ -396,6 +396,7 @@ export const studentReviews = pgTable("student_reviews", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().unique(),
   displayName: text("display_name").notNull(),
+  university: text("university"),
   rating: smallint("rating").notNull(),
   review: text("review").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -403,6 +404,7 @@ export const studentReviews = pgTable("student_reviews", {
 }, (table) => [
   check("student_reviews_rating_check", sql`${table.rating} between 1 and 5`),
   check("student_reviews_display_name_check", sql`char_length(${table.displayName}) between 2 and 100`),
+  check("student_reviews_university_check", sql`${table.university} is null or char_length(${table.university}) between 2 and 160`),
   check("student_reviews_review_check", sql`char_length(${table.review}) between 10 and 600`),
   index("student_reviews_created_at_idx").on(table.createdAt),
 ]);

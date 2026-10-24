@@ -7,6 +7,15 @@ export const dynamic = "force-dynamic";
 type ReviewRequest = { rating?: unknown; review?: unknown };
 const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
+const reviewSelect = "id, display_name, university, rating, review, created_at";
+
+function normalizeUniversity(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (trimmed.length < 2 || trimmed.length > 160) return null;
+  return trimmed;
+}
+
 export async function GET() {
   let supabase;
   try {
@@ -17,17 +26,37 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("student_reviews")
-    .select("id, display_name, rating, review, created_at")
+    .select(reviewSelect)
     .order("created_at", { ascending: false })
     .limit(12);
 
   if (error) {
-    console.error("Student reviews could not be loaded", { code: error.code });
+    // Fallback for databases that have not applied the university column yet.
+    const fallback = await supabase
+      .from("student_reviews")
+      .select("id, display_name, rating, review, created_at")
+      .order("created_at", { ascending: false })
+      .limit(12);
+
+    if (fallback.error) {
+      console.error("Student reviews could not be loaded", { code: error.code, fallback: fallback.error.code });
+      return NextResponse.json(
+        { error: "Reviews could not be loaded. Apply the student reviews migration and try again." },
+        { status: 500, headers: noStoreHeaders },
+      );
+    }
+
     return NextResponse.json(
-      { error: "Reviews could not be loaded. Apply the student reviews migration and try again." },
-      { status: 500, headers: noStoreHeaders },
+      {
+        reviews: (fallback.data ?? []).map((review) => ({
+          ...review,
+          university: null,
+        })),
+      },
+      { headers: noStoreHeaders },
     );
   }
+
   return NextResponse.json({ reviews: data ?? [] }, { headers: noStoreHeaders });
 }
 
@@ -62,32 +91,71 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("full_name")
+    .select("full_name, university")
     .eq("id", user.id)
     .maybeSingle();
   if (profileError) {
     console.error("Student review author could not be loaded", { code: profileError.code });
     return NextResponse.json({ error: "Your profile could not be loaded. Try again." }, { status: 500 });
   }
+
   const displayName = typeof profile?.full_name === "string" && profile.full_name.trim().length >= 2
     ? profile.full_name.trim().slice(0, 100)
     : "StudyStation student";
+  const university = normalizeUniversity(profile?.university);
 
-  const { data: savedReview, error } = await supabase
+  const payload = {
+    user_id: user.id,
+    display_name: displayName,
+    university,
+    rating,
+    review,
+    updated_at: new Date().toISOString(),
+  };
+
+  let savedReview: {
+    id: string;
+    display_name: string;
+    university?: string | null;
+    rating: number;
+    review: string;
+    created_at: string;
+  } | null = null;
+
+  const withUniversity = await supabase
     .from("student_reviews")
-    .upsert({
-      user_id: user.id,
-      display_name: displayName,
-      rating,
-      review,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" })
-    .select("id, display_name, rating, review, created_at")
+    .upsert(payload, { onConflict: "user_id" })
+    .select(reviewSelect)
     .single();
 
-  if (error || !savedReview) {
-    console.error("Student review could not be saved", { code: error?.code });
-    return NextResponse.json({ error: "Your review could not be saved. Apply the student reviews migration and try again." }, { status: 500 });
+  if (withUniversity.error) {
+    // Compatibility path if the university column is not migrated yet.
+    const withoutUniversity = await supabase
+      .from("student_reviews")
+      .upsert({
+        user_id: user.id,
+        display_name: displayName,
+        rating,
+        review,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" })
+      .select("id, display_name, rating, review, created_at")
+      .single();
+
+    if (withoutUniversity.error || !withoutUniversity.data) {
+      console.error("Student review could not be saved", {
+        code: withUniversity.error.code,
+        fallback: withoutUniversity.error?.code,
+      });
+      return NextResponse.json(
+        { error: "Your review could not be saved. Apply the student reviews migration and try again." },
+        { status: 500 },
+      );
+    }
+
+    savedReview = { ...withoutUniversity.data, university };
+  } else {
+    savedReview = withUniversity.data;
   }
 
   return NextResponse.json({ review: savedReview }, { status: 201, headers: noStoreHeaders });
