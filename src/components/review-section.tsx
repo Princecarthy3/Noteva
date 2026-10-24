@@ -23,6 +23,29 @@ function Stars({ rating, size = "size-4" }: { rating: number; size?: string }) {
   );
 }
 
+function ReviewCard({ item }: { item: StudentReview }) {
+  return (
+    <article
+      data-review-card
+      className="glass-panel flex min-h-[205px] flex-col justify-between rounded-[24px] p-6 shadow-sm opacity-100"
+    >
+      <div>
+        <Stars rating={item.rating} />
+        <MessageSquareQuote className="mt-4 size-5 text-[#7259e8]" />
+        <p className="mt-3 text-sm font-semibold leading-6 text-[#3d374a]">&ldquo;{item.review}&rdquo;</p>
+      </div>
+      <div className="mt-6 border-t border-[#f0edf5] pt-4">
+        <p className="text-xs font-black text-[#17132d]">{item.display_name}</p>
+        <p className="mt-1 text-[10px] font-semibold text-[#837d8f]">
+          {item.university?.trim() || "StudyStation student"}
+          {" · "}
+          {new Date(item.created_at).toLocaleDateString()}
+        </p>
+      </div>
+    </article>
+  );
+}
+
 export function ReviewSection() {
   const [reviews, setReviews] = useState<StudentReview[]>([]);
   const [message, setMessage] = useState("");
@@ -30,7 +53,7 @@ export function ReviewSection() {
 
   useEffect(() => {
     let active = true;
-    const loadReviews = () => void fetch("/api/reviews", { cache: "no-store" })
+    const loadReviews = () => void fetch("/api/reviews?limit=12", { cache: "no-store" })
       .then(async (response) => {
         const body = await response.json() as { reviews?: StudentReview[]; error?: string };
         if (!response.ok) throw new Error(body.error || "Reviews could not be loaded.");
@@ -60,6 +83,9 @@ export function ReviewSection() {
     };
   }, []);
 
+  const preview = reviews.slice(0, 3);
+  const hasMore = reviews.length > 3;
+
   return (
     <section id="students" className="px-5 py-24 lg:py-32">
       <div className="mx-auto max-w-[1140px]">
@@ -71,7 +97,9 @@ export function ReviewSection() {
           <h2 className="mt-2 text-balance text-[34px] font-black tracking-[-1.8px] sm:text-[46px]">
             Made better by the people who study here.
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#6c667a]">Share what is helping you learn. Reviews come from signed-in StudyStation users.</p>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#6c667a]">
+            Real feedback from signed-in StudyStation students. Sign in to share your own review from the app.
+          </p>
         </div>
 
         {error && message ? (
@@ -80,39 +108,48 @@ export function ReviewSection() {
           </div>
         ) : null}
 
-        {reviews.length > 0 ? (
-          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {reviews.map((item) => (
-              <article
-                key={item.id}
-                data-review-card
-                className="glass-panel flex min-h-[205px] flex-col justify-between rounded-[24px] p-6 shadow-sm opacity-100"
-              >
-                <div>
-                  <Stars rating={item.rating} />
-                  <MessageSquareQuote className="mt-4 size-5 text-[#7259e8]" />
-                  <p className="mt-3 text-sm font-semibold leading-6 text-[#3d374a]">&ldquo;{item.review}&rdquo;</p>
-                </div>
-                <div className="mt-6 border-t border-[#f0edf5] pt-4">
-                  <p className="text-xs font-black text-[#17132d]">{item.display_name}</p>
-                  <p className="mt-1 text-[10px] font-semibold text-[#837d8f]">
-                    {item.university?.trim() || "StudyStation student"}
-                    {" · "}
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </article>
-            ))}
-          </div>
+        {preview.length > 0 ? (
+          <>
+            <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {preview.map((item) => (
+                <ReviewCard key={item.id} item={item} />
+              ))}
+            </div>
+            {hasMore ? (
+              <div className="mt-8 flex justify-center">
+                <Link
+                  href="/reviews"
+                  className="inline-flex h-11 items-center justify-center rounded-xl border border-[#ddd6ff] bg-white px-5 text-sm font-extrabold text-[#5d48ca] shadow-sm transition hover:bg-[#f7f5ff]"
+                >
+                  View all reviews
+                </Link>
+              </div>
+            ) : null}
+          </>
         ) : !error ? (
           <div className="mt-10 rounded-2xl border border-dashed border-[#dcd6e8] bg-white/60 p-6 text-center text-sm text-[#777180]">
-            Be the first student to share a StudyStation review.
+            Student reviews will appear here. Sign in to share the first one from your study space.
           </div>
         ) : null}
-
-        <ReviewComposer className="mx-auto mt-10 max-w-2xl" />
       </div>
     </section>
+  );
+}
+
+export function ReviewsGrid({ reviews }: { reviews: StudentReview[] }) {
+  if (!reviews.length) {
+    return (
+      <div className="rounded-2xl border border-dashed border-[#dcd6e8] bg-white/60 p-6 text-center text-sm text-[#777180]">
+        No reviews yet.
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+      {reviews.map((item) => (
+        <ReviewCard key={item.id} item={item} />
+      ))}
+    </div>
   );
 }
 

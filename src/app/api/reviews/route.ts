@@ -16,7 +16,7 @@ function normalizeUniversity(value: unknown): string | null {
   return trimmed;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   let supabase;
   try {
     supabase = await createClient();
@@ -24,11 +24,16 @@ export async function GET() {
     return NextResponse.json({ reviews: [] }, { headers: noStoreHeaders });
   }
 
+  const requestedLimit = Number(new URL(request.url).searchParams.get("limit") ?? "12");
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 50)
+    : 12;
+
   const { data, error } = await supabase
     .from("student_reviews")
     .select(reviewSelect)
     .order("created_at", { ascending: false })
-    .limit(12);
+    .limit(limit);
 
   if (error) {
     // Fallback for databases that have not applied the university column yet.
@@ -36,7 +41,7 @@ export async function GET() {
       .from("student_reviews")
       .select("id, display_name, rating, review, created_at")
       .order("created_at", { ascending: false })
-      .limit(12);
+      .limit(limit);
 
     if (fallback.error) {
       console.error("Student reviews could not be loaded", { code: error.code, fallback: fallback.error.code });
