@@ -126,6 +126,7 @@ export function GeneratedQuizLibrary() {
     material.type === "quiz" && "questions" in material.output);
   const [selectedId, setSelectedId] = useState("");
   const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [requestError, setRequestError] = useState("");
@@ -134,6 +135,7 @@ export function GeneratedQuizLibrary() {
   function selectQuiz(id: string) {
     setSelectedId(id);
     setAnswers({});
+    setChecked(false);
     setMessage("");
     setRequestError("");
   }
@@ -145,6 +147,7 @@ export function GeneratedQuizLibrary() {
       setRequestError("Answer every question before saving your attempt.");
       return;
     }
+    setChecked(true);
     setSaving(true);
     setRequestError("");
     setMessage("");
@@ -187,17 +190,19 @@ export function GeneratedQuizLibrary() {
                     <legend className="px-1 text-[10px] font-extrabold text-[#28233a]">Q{index + 1}. {question.question}</legend>
                     <div className="mt-2 space-y-1.5">
                       {question.choices.map((choice, choiceIndex) => <label key={`${choiceIndex}-${choice}`} className={`flex cursor-pointer items-start gap-2 rounded-lg p-2 text-[9px] leading-4 ${answers[index] === choiceIndex ? "bg-[#f3f0ff]" : "hover:bg-[#faf9fc]"}`}>
-                        <input type="radio" name={`generated-quiz-${selected.id}-${index}`} checked={answers[index] === choiceIndex} onChange={() => { setAnswers((previous) => ({ ...previous, [index]: choiceIndex })); setMessage(""); setRequestError(""); }} className="mt-0.5 accent-[#7259e8]" />
+                        <input type="radio" name={`generated-quiz-${selected.id}-${index}`} checked={answers[index] === choiceIndex} onChange={() => { setAnswers((previous) => ({ ...previous, [index]: choiceIndex })); setChecked(false); setMessage(""); setRequestError(""); }} className="mt-0.5 accent-[#7259e8]" />
                         <span>{choice}</span>
                       </label>)}
                     </div>
+                    {checked && <p className={`mt-2 rounded-lg p-2 text-[9px] leading-4 ${answers[index] === question.correctIndex ? "bg-[#e9f7ef] text-[#287451]" : "bg-[#fff1ef] text-[#a44e48]"}`}><b>{answers[index] === question.correctIndex ? "Right answer." : `Wrong answer. Correct answer: ${question.choices[question.correctIndex]}.`}</b> {question.explanation}</p>}
                   </fieldset>
                 ))}
                 {requestError && <p role="alert" className="rounded-lg bg-[#fff1ef] p-2.5 text-[9px] font-semibold text-[#a44e48]">{requestError}</p>}
                 {message && <p role="status" className="rounded-lg bg-[#e9f7ef] p-2.5 text-[9px] font-semibold text-[#287451]">{message}</p>}
-                <button type="button" disabled={saving} onClick={() => void saveAttempt()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#17132d] py-2.5 text-[10px] font-extrabold text-white disabled:opacity-60">{saving && <LoaderCircle className="size-3.5 animate-spin" />} Check answers and save attempt</button>
+                <button type="button" disabled={saving} onClick={() => void saveAttempt()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#17132d] py-2.5 text-[10px] font-extrabold text-white disabled:opacity-60">{saving && <LoaderCircle className="size-3.5 animate-spin" />} {checked ? "Save another attempt" : "Check answers and save attempt"}</button>
               </div>}
             </>}
     </section>
   );
 }
+

@@ -39,7 +39,8 @@ export async function openRouterChat(messages: Message[], options?: { model?: st
     signal: AbortSignal.timeout(120_000),
   });
 
-  const data = await response.json() as OpenRouterResponse;
+  const data = await response.json().catch(() => null) as OpenRouterResponse | null;
+  if (!data) throw new Error(`OpenRouter returned an unreadable response (${response.status})`);
   if (!response.ok) throw new Error(data.error?.message ?? `OpenRouter request failed (${response.status})`);
   const content = data.choices?.[0]?.message?.content;
   if (typeof content === "string") return content;
@@ -73,3 +74,4 @@ export function parseJsonObject<T>(value: string): T {
   if (start < 0 || end < start) throw new Error("AI response did not contain valid JSON");
   return JSON.parse(cleaned.slice(start, end + 1)) as T;
 }
+

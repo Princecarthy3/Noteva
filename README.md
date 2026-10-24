@@ -117,7 +117,7 @@ After applying the required migrations to a development project and signing in:
 
 ## AI Study Lab
 
-Stage 8 adds the AI Study Lab to the workspace navigation. It can create revision summaries, concept explanations, source-grounded answers, simplified explanations, flashcards, and multiple-choice practice quizzes from a completed lecture transcript owned by the signed-in student. The generated output is stored in `ai_generations`, can be edited or deleted, and is restricted to 20 requests per user per hour. Each request uses at most 24,000 transcript characters; unrelated account data is not sent to OpenRouter. Structured output is validated before it is saved. Configure `OPENROUTER_API_KEY` and, optionally, `OPENROUTER_STUDY_MODEL`; the selected model must support chat completion and return JSON text.
+Stage 8 adds the AI Study Lab to the workspace navigation. It can create revision summaries, concept explanations, source-grounded answers, simplified explanations, flashcards, and multiple-choice practice quizzes from a completed lecture transcript owned by the signed-in student. The transcript is supplied as retrieved context, while the model can use its subject reasoning to clarify and connect ideas without contradicting the source. The generated output is stored in `ai_generations`, can be edited or deleted, and is restricted to 20 requests per user per hour. Each request uses at most 24,000 transcript characters; unrelated account data is not sent to OpenRouter. Structured output is validated before it is saved. Configure `OPENROUTER_API_KEY`, optionally `OPENROUTER_STUDY_MODEL`, and optionally `OPENROUTER_STUDY_FALLBACK_MODEL` for model failover; each model must support chat completion and return JSON text.
 
 ### Manual AI Study Lab check
 
@@ -210,3 +210,4 @@ After applying the Stage 4, 5, and 7 migrations, configuring Supabase, and setti
 ## Environment variables
 
 `.env.example` contains placeholders only. Keep server-only credentials out of browser code. Configure only the providers required by the feature stage you are working on; Lecture Studio requires `SUPABASE_SERVICE_ROLE_KEY` for server-side lecture mutations and `OPENROUTER_API_KEY` for transcription. The AI Study Lab also uses the server-side OpenRouter key and service-role key for authenticated result persistence. Study Calls use the server-side `JITSI_MEET_DOMAIN` setting; do not add a provider secret to client-side variables.
+
