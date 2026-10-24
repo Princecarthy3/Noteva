@@ -13,7 +13,7 @@ export function hasGeminiKey() {
 export function getGeminiStudyModel() {
   return process.env.GEMINI_STUDY_MODEL?.trim()
     || process.env.GEMINI_MODEL?.trim()
-    || "gemini-3.8-flash";
+    || "gemini-3.5-flash-lite";
 }
 
 export async function geminiGenerateJson(prompt: string, options?: {
@@ -37,9 +37,10 @@ export async function geminiGenerateJson(prompt: string, options?: {
         temperature: options?.temperature ?? 0.2,
         maxOutputTokens: options?.maxOutputTokens ?? 8192,
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: "minimal" },
       },
     }),
-    signal: AbortSignal.timeout(100_000),
+    signal: AbortSignal.timeout(30_000),
   });
 
   const data = await response.json().catch(() => null) as GeminiResponse | null;
