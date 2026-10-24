@@ -109,6 +109,8 @@ type View =
   | "assistant"
   | "profile";
 
+type AppNotification = { id: string; type: string; title: string; body: string; read_at: string | null; created_at: string };
+
 type Modal = "capture" | "flashcards" | "note" | null;
 type SourceTab = "record" | "upload";
 type ChatMessage = { role: "user" | "assistant"; content: string; citation?: string };
@@ -191,6 +193,9 @@ export function AppShell({
   const [sourceTab, setSourceTab] = useState<SourceTab>("record");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const notifiedIds = useRef<Set<string> | null>(null);
+  const notificationAudioRef = useRef<AudioContext | null>(null);
   const { theme, setTheme } = useTheme();
   const { openInstallInstructions } = useInstallApp();
   const [search, setSearch] = useState("");
@@ -254,6 +259,55 @@ export function AppShell({
       setSourceTab("record");
     }
   }, [params]);
+
+  useEffect(() => {
+    const enableNotificationSound = () => {
+      if (typeof AudioContext === "undefined") return;
+      notificationAudioRef.current ??= new AudioContext();
+      if (notificationAudioRef.current.state === "suspended") void notificationAudioRef.current.resume().catch(() => undefined);
+    };
+    window.addEventListener("pointerdown", enableNotificationSound, { once: true });
+    return () => window.removeEventListener("pointerdown", enableNotificationSound);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadNotifications = async () => {
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json() as { notifications?: AppNotification[] };
+        if (!active || !Array.isArray(data.notifications)) return;
+        const next = data.notifications;
+        const previousIds = notifiedIds.current;
+        if (previousIds) {
+          const hasNewJoin = next.some((item) => item.type === "study_group_join" && !previousIds.has(item.id));
+          if (hasNewJoin) {
+            try {
+              const audio = notificationAudioRef.current;
+              if (!audio || audio.state !== "running") throw new Error("Notification sound is not enabled.");
+              const oscillator = audio.createOscillator();
+              const gain = audio.createGain();
+              oscillator.type = "sine";
+              oscillator.frequency.value = 880;
+              gain.gain.setValueAtTime(0.0001, audio.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 0.02);
+              gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.22);
+              oscillator.connect(gain);
+              gain.connect(audio.destination);
+              oscillator.start();
+              oscillator.stop(audio.currentTime + 0.23);
+            } catch {}
+          }
+        }
+        notifiedIds.current = new Set(next.map((item) => item.id));
+        setNotifications(next);
+      } catch { return; }
+    };
+    void loadNotifications();
+    const interval = window.setInterval(() => void loadNotifications(), 8000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -726,44 +780,48 @@ export function AppShell({
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
 
-            {/* Notification Bell with Real Tasks */}
+            {/* Notifications and study tasks */}
             <div className="relative">
               <button
-                onClick={() => setNotificationsOpen((value) => !value)}
+                onClick={() => {
+                  const opening = !notificationsOpen;
+                  setNotificationsOpen(opening);
+                  if (opening) {
+                    setNotifications((current) => current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })));
+                    void fetch("/api/notifications", { method: "PATCH" });
+                  }
+                }}
                 className="relative grid size-9 place-items-center rounded-xl border border-[#ebe7f1] bg-white text-[#2a2440] hover:bg-[#f8f6fb] shadow-sm"
                 aria-label="Notifications"
               >
                 <Bell className="size-4" />
-                {dashboardData.tasks.length > 0 && (
-                  <span className="absolute right-1 top-1 size-2 rounded-full bg-[#7259e8]" />
-                )}
+                {notifications.filter((item) => !item.read_at).length > 0 && <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-[#7259e8] px-1 text-[8px] font-black text-white">{notifications.filter((item) => !item.read_at).length}</span>}
               </button>
 
               {notificationsOpen && (
-                <div className="glass-panel absolute right-0 top-12 w-[320px] rounded-[24px] p-4 shadow-[0_20px_60px_rgba(35,28,68,.16)] z-50">
+                <div className="glass-panel absolute right-0 top-12 z-50 w-[min(320px,calc(100vw-24px))] rounded-[24px] p-4 shadow-[0_20px_60px_rgba(35,28,68,.16)]">
                   <div className="flex items-center justify-between border-b border-[#f0edf5] pb-2.5">
-                    <b className="text-xs font-black text-[#17132d]">Your Radar</b>
+                    <b className="text-xs font-black text-[#17132d]">Notifications</b>
                     <span className="text-[10px] font-extrabold text-[#7259e8]">
-                      {dashboardData.tasks.length} active
+                      {notifications.filter((item) => !item.read_at).length} unread
                     </span>
                   </div>
 
-                  <div className="mt-3 space-y-2 max-h-56 overflow-y-auto hide-scrollbar">
-                    {dashboardData.tasks.length === 0 ? (
-                      <p className="py-4 text-center text-[11px] text-[#868093]">
-                        No upcoming deadlines or pending tasks.
-                      </p>
-                    ) : (
-                      dashboardData.tasks.slice(0, 5).map((task) => (
-                        <div key={task.id} className="rounded-xl bg-[#faf9fd] p-2.5 border border-[#eeeaf5]">
-                          <p className="truncate text-[11px] font-extrabold text-[#17132d]">{task.title}</p>
-                          <p className="mt-0.5 text-[9px] font-bold text-[#868093]">
-                            {task.dueAt ? `Due ${new Date(task.dueAt).toLocaleDateString()}` : "No deadline"}
-                          </p>
-                        </div>
-                      ))
-                    )}
+                  <div className="mt-3 max-h-56 space-y-2 overflow-y-auto hide-scrollbar">
+                    {notifications.length ? notifications.slice(0, 8).map((item) => (
+                      <button type="button" key={item.id} onClick={() => { setNotificationsOpen(false); navigate("study-groups"); }} className={`block w-full rounded-xl border p-2.5 text-left ${item.read_at ? "border-[#eeeaf5] bg-[#faf9fd]" : "border-[#dcd4ff] bg-[#f5f2ff]"}`}>
+                        <p className="text-[11px] font-extrabold text-[#17132d]">{item.title}</p>
+                        <p className="mt-0.5 break-words text-[9px] leading-4 text-[#777183]">{item.body}</p>
+                        <time className="mt-1 block text-[8px] font-bold text-[#96909f]">{new Date(item.created_at).toLocaleString()}</time>
+                      </button>
+                    )) : <p className="py-3 text-center text-[10px] text-[#868093]">No new notifications.</p>}
                   </div>
+
+                  <div className="my-3 border-t border-[#f0edf5]" />
+                  <p className="mb-2 text-[9px] font-black uppercase tracking-wide text-[#8e8895]">Study tasks</p>
+                  {dashboardData.tasks.length === 0 ? <p className="text-center text-[10px] text-[#868093]">No upcoming deadlines or pending tasks.</p> : dashboardData.tasks.slice(0, 3).map((task) => (
+                    <p key={task.id} className="truncate py-1 text-[10px] font-semibold text-[#514b5e]">{task.title}</p>
+                  ))}
 
                   <button
                     type="button"

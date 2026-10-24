@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyGroupOwnerOfJoin } from "@/lib/study-groups/notifications";
 import { getJitsiDomain } from "@/lib/calls/jitsi";
 
 export const runtime = "nodejs";
@@ -226,12 +227,14 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (action === "join_public") {
     if (group.visibility !== "public") return fail("Private groups require a valid invitation.", 403);
+    const wasMember = Boolean(role);
     const { error } = await admin.from("group_members").upsert({
       group_id: id,
       user_id: auth.user.id,
       role: "member",
     }, { onConflict: "group_id,user_id", ignoreDuplicates: true });
     if (error) return fail("You could not join this group. Please try again.", 500);
+    if (!wasMember) await notifyGroupOwnerOfJoin(id, auth.user.id);
     return NextResponse.json({ success: true, role: "member" });
   }
 

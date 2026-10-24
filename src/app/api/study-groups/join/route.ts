@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyGroupOwnerOfJoin } from "@/lib/study-groups/notifications";
 
 export const runtime = "nodejs";
 
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
       if (rollbackError) console.error("Study group invite use count rollback failed", { code: rollbackError.code });
       return fail("You could not join this group. Refresh and try again.", 409);
     }
+    await notifyGroupOwnerOfJoin(invite.group_id, user.id);
     return NextResponse.json({ success: true, groupId: invite.group_id });
   }
 
@@ -89,11 +91,18 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (groupError) return fail("The study group could not be loaded.", 500);
   if (!group || group.visibility !== "public") return fail("That group is not available to join publicly.", 403);
+  const { data: priorMembership, error: priorMembershipError } = await admin.from("group_members")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (priorMembershipError) return fail("Your group membership could not be checked.", 500);
   const { error } = await admin.from("group_members").upsert({
     group_id: groupId,
     user_id: user.id,
     role: "member",
   }, { onConflict: "group_id,user_id", ignoreDuplicates: true });
   if (error) return fail("You could not join this group.", 500);
+  if (!priorMembership) await notifyGroupOwnerOfJoin(groupId, user.id);
   return NextResponse.json({ success: true, groupId });
 }

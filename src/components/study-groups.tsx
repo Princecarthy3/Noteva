@@ -181,6 +181,26 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
     return () => { active = false; };
   }, [inviteToken, router]);
 
+  useEffect(() => {
+    if (!selectedId) return;
+    let active = true;
+    const refreshGroupState = async () => {
+      try {
+        const [groupData, detailData] = await Promise.all([
+          api<{ groups: Group[] }>("/api/study-groups", { cache: "no-store" }),
+          api<GroupDetail>(`/api/study-groups/${selectedId}`, { cache: "no-store" }),
+        ]);
+        if (!active) return;
+        setGroups(groupData.groups);
+        setDetail(detailData);
+      } catch {
+        return;
+      }
+    };
+    const interval = window.setInterval(() => void refreshGroupState(), 8000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [selectedId]);
+
   async function createGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -362,7 +382,7 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
     }
   }
 
-  return <div className="fade-up space-y-5">
+  return <div className="fade-up w-full min-w-0 max-w-full space-y-5">
     <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div><p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">LEARN TOGETHER</p><h1 className="mt-1 text-[25px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[29px]">Study groups</h1><p className="mt-1.5 text-[12px] leading-5 text-[#7d7789]">Find classmates, discuss course material, and plan focused sessions.</p></div>
       <button type="button" onClick={() => setShowCreate((value) => !value)} className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl bg-[#7259e8] px-4 text-[11px] font-extrabold text-white"><Plus className="size-4" /> Create group</button>
@@ -379,31 +399,31 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
       <div className="flex gap-2 sm:col-span-2"><button disabled={creating} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#17132d] px-4 text-[10px] font-extrabold text-white disabled:opacity-60">{creating && <LoaderCircle className="size-3.5 animate-spin" />}Create study group</button><button type="button" onClick={() => setShowCreate(false)} className="h-9 rounded-lg border border-[#e7e3ec] px-4 text-[10px] font-extrabold">Cancel</button></div>
     </form>}
 
-    <div className="grid items-start gap-5 xl:grid-cols-[310px_minmax(0,1fr)]">
-      <aside className="rounded-[22px] border border-[#e9e5ef] bg-white p-4">
+    <div className="grid w-full min-w-0 max-w-full items-start gap-5 xl:grid-cols-[310px_minmax(0,1fr)]">
+      <aside className="min-w-0 rounded-[22px] border border-[#e9e5ef] bg-white p-4">
         <div className="flex gap-1 rounded-xl bg-[#f5f3f8] p-1">{[["all", "All"], ["mine", "Joined"], ["discover", "Discover"]].map(([key, label]) => <button key={key} type="button" onClick={() => setFilter(key as typeof filter)} className={`flex-1 rounded-lg py-2 text-[9px] font-extrabold ${filter === key ? "bg-white text-[#7259e8] shadow-sm" : "text-[#8e8895]"}`}>{label}</button>)}</div>
         {loading ? <p className="flex items-center gap-2 px-2 py-8 text-xs text-[#8a8494]"><LoaderCircle className="size-4 animate-spin" /> Loading groups…</p>
           : visibleGroups.length ? <div className="mt-3 space-y-1">{visibleGroups.map((group) => <button key={group.id} type="button" onClick={() => {setSelectedId(group.id); setInviteUrl(""); setNotice(""); void loadDetail(group.id);}} className={`w-full rounded-xl p-3 text-left ${group.id === selectedId ? "bg-[#f3f0ff]" : "hover:bg-[#faf9fc]"}`}><span className="flex items-center gap-2"><span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#eeeaff] text-[#7259e8]"><UsersRound className="size-4" /></span><span className="min-w-0 flex-1"><b className="block truncate text-[11px]">{group.name}</b><span className="mt-0.5 block truncate text-[9px] text-[#918b99]">{group.courseName ?? (group.visibility === "public" ? "Open group" : "Private group")}</span></span>{group.visibility === "private" ? <LockKeyhole className="size-3 text-[#9a94a3]" /> : <Globe2 className="size-3 text-[#9a94a3]" />}</span><span className="mt-2 flex items-center justify-between text-[8px] font-bold text-[#938d9b]"><span>{group.role ? `Your role: ${group.role}` : "Not joined"}</span>{group.role ? null : <span className="text-[#7259e8]">View</span>}</span></button>)}</div>
             : <div className="px-3 py-8 text-center"><p className="text-xs font-extrabold">No groups here yet</p><p className="mt-1 text-[10px] leading-4 text-[#8a8494]">{filter === "discover" ? "Public study groups will appear here." : "Create a group or switch filters to explore."}</p></div>}
       </aside>
 
-      <section className="min-h-[520px] rounded-[22px] border border-[#e9e5ef] bg-white p-4 sm:p-6">
+      <section className="min-h-[520px] w-full min-w-0 max-w-full overflow-hidden rounded-[22px] border border-[#e9e5ef] bg-white p-4 sm:p-6">
         {detailLoading ? <p className="flex items-center justify-center gap-2 py-24 text-xs text-[#8a8494]"><LoaderCircle className="size-4 animate-spin" /> Opening group…</p>
           : detail ? <div>
-            <div className="flex flex-col justify-between gap-3 border-b border-[#eeeaf2] pb-4 sm:flex-row sm:items-start"><div className="flex items-start gap-3"><button type="button" onClick={() => {setSelectedId(""); setDetail(null);}} aria-label="Back to groups" className="grid size-8 place-items-center rounded-lg border border-[#e9e5ef] xl:hidden"><ArrowLeft className="size-4" /></button><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#eeeaff] text-[#7259e8]"><UsersRound className="size-5" /></span><div><h2 className="text-[16px] font-extrabold">{detail.group.name}</h2><p className="mt-1 text-[10px] leading-4 text-[#8a8494]">{detail.group.description || "A study space for classmates."}</p><p className="mt-1 text-[9px] font-bold capitalize text-[#7259e8]">{detail.group.visibility} group {detail.memberCount ? "·" : ""} <button type="button" onClick={() => setShowMembers(true)} className="underline underline-offset-2">{detail.memberCount ?? detail.members.length} members</button> {detail.role ? `· You are ${detail.role}` : ""}</p></div></div>
+            <div className="flex min-w-0 flex-col justify-between gap-3 border-b border-[#eeeaf2] pb-4 sm:flex-row sm:items-start"><div className="flex min-w-0 items-start gap-3"><button type="button" onClick={() => {setSelectedId(""); setDetail(null);}} aria-label="Back to groups" className="grid size-8 shrink-0 place-items-center rounded-lg border border-[#e9e5ef] xl:hidden"><ArrowLeft className="size-4" /></button><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#eeeaff] text-[#7259e8]"><UsersRound className="size-5" /></span><div className="min-w-0"><h2 className="break-words text-[16px] font-extrabold">{detail.group.name}</h2><p className="mt-1 break-words text-[10px] leading-4 text-[#8a8494]">{detail.group.description || "A study space for classmates."}</p><p className="mt-1 break-words text-[9px] font-bold capitalize text-[#7259e8]">{detail.group.visibility} group {detail.memberCount ? "·" : ""} <button type="button" onClick={() => setShowMembers(true)} className="underline underline-offset-2">{detail.memberCount ?? detail.members.length} members</button> {detail.role ? `· You are ${detail.role}` : ""}</p></div></div>
               <div className="flex flex-wrap gap-2">{detail.role ? <><button type="button" onClick={() => void startGroupCall()} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-2.5 text-[9px] font-extrabold text-white"><Phone className="size-3" /> Call</button>{["owner", "moderator"].includes(detail.role) && <><button type="button" onClick={() => void groupAction("create_invite")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold"><Copy className="size-3" /> Invite</button><button type="button" onClick={() => {if (window.confirm("Revoke every active invitation to this group?")) void groupAction("revoke_invites");}} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold">Revoke invites</button></>}<button type="button" onClick={() => void reportMessage()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold"><ShieldAlert className="size-3" /> Report</button>{detail.role !== "owner" ? <button type="button" onClick={() => void groupAction("leave")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#f0d7d4] px-2.5 text-[9px] font-extrabold text-[#a44e48]">Leave</button> : <button type="button" onClick={() => {if (window.confirm("Delete this group and all its discussions, sessions, and invitations? Shared resources will become private again.")) void groupAction("delete_group");}} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#f0d7d4] px-2.5 text-[9px] font-extrabold text-[#a44e48]">Delete group</button>}</> : detail.group.visibility === "public" ? <button type="button" onClick={() => void joinPublic({ ...detail.group, role: null })} className="h-8 rounded-lg bg-[#7259e8] px-3 text-[9px] font-extrabold text-white">Join group</button> : <span className="rounded-lg bg-[#f5f3f8] px-3 py-2 text-[9px] font-bold text-[#8a8494]">Invite required</span>}</div>
             </div>
 
             {inviteUrl && <div className="mt-3 flex flex-col gap-2 rounded-xl bg-[#f7f5ff] p-3 sm:flex-row"><p className="min-w-0 flex-1 break-all text-[9px] leading-4 text-[#655d74]">{inviteUrl}</p><button type="button" onClick={() => void copyInvite()} className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white px-3 text-[9px] font-extrabold text-[#5d47bd]"><Copy className="size-3" /> Copy link</button></div>}
 
-            {detail.role ? <div className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
-              <section className="flex min-h-[420px] flex-col rounded-2xl border border-[#eeeaf2] p-3 sm:p-4"><div className="flex items-center gap-2"><MessageCircle className="size-4 text-[#7259e8]" /><h3 className="text-xs font-extrabold">Group discussion</h3></div>
+            {detail.role ? <div className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+              <section className="flex min-h-[420px] min-w-0 flex-col rounded-2xl border border-[#eeeaf2] p-3 sm:p-4"><div className="flex items-center gap-2"><MessageCircle className="size-4 text-[#7259e8]" /><h3 className="text-xs font-extrabold">Group discussion</h3></div>
                 {detail.hasMoreMessages && <button type="button" onClick={() => void loadOlderMessages()} className="mx-auto mt-3 rounded-lg bg-[#f4f2f7] px-3 py-2 text-[9px] font-extrabold text-[#6d6678]">Load earlier messages</button>}
                 <div className="mt-3 flex-1 space-y-3 overflow-y-auto">{detail.messages.length ? detail.messages.map((item) => <article key={item.id} className={`max-w-[92%] rounded-xl p-3 ${item.isMine ? "ml-auto bg-[#f1efff]" : "bg-[#f7f6f9]"}`}><div className="flex justify-between gap-3"><span className="text-[8px] font-extrabold text-[#7259e8]">{item.senderName ?? (item.isMine ? "You" : "Group member")}</span><time className="text-[8px] text-[#9a94a3]">{formatDate(item.created_at)}</time></div><p className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-4">{item.body}</p><button type="button" onClick={() => void reportMessage(item.id)} className="mt-1 text-[8px] font-bold text-[#a44e48]">Report message</button></article>) : <p className="rounded-xl bg-[#fbfaff] px-3 py-7 text-center text-[10px] text-[#8a8494]">Start the discussion with a question, study tip, or announcement.</p>}</div>
                 <form onSubmit={sendMessage} className="mt-3 flex gap-2 border-t border-[#eeeaf2] pt-3"><input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void uploadGroupFile(event.target.files?.[0])} /><button type="button" disabled={uploadingFile} onClick={() => fileInputRef.current?.click()} aria-label="Attach a file" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#e8e4ed] text-[#7259e8] disabled:opacity-50">{uploadingFile ? <LoaderCircle className="size-4 animate-spin" /> : <Paperclip className="size-4" />}</button><input value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} placeholder="Write a group message…" className="h-10 min-w-0 flex-1 rounded-xl border border-[#e8e4ed] px-3 text-[10px] outline-none focus:border-[#aa9af0]" /><button disabled={!message.trim()} className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#7259e8] text-white disabled:opacity-50" aria-label="Send message"><Send className="size-4" /></button></form>
               </section>
 
-              <aside className="space-y-4">
+              <aside className="min-w-0 space-y-4">
                 <section className="rounded-2xl border border-[#eeeaf2] p-4"><div className="flex items-center justify-between"><h3 className="text-xs font-extrabold">Study sessions</h3>{["owner", "moderator"].includes(detail.role) && <button type="button" onClick={() => setShowSession((value) => !value)} className="inline-flex items-center gap-1 text-[9px] font-extrabold text-[#7259e8]"><CalendarPlus className="size-3.5" /> Schedule</button>}</div>
                   {showSession && <form onSubmit={createSession} className="mt-3 space-y-2"><input required name="title" minLength={2} maxLength={160} placeholder="Session title" className="h-9 w-full rounded-lg border border-[#e8e4ed] px-2.5 text-[9px]" /><label className="block text-[8px] font-bold text-[#8a8494]">START<input required name="startsAt" type="datetime-local" className="mt-1 h-9 w-full rounded-lg border border-[#e8e4ed] px-2 text-[9px]" /></label><label className="block text-[8px] font-bold text-[#8a8494]">END<input required name="endsAt" type="datetime-local" className="mt-1 h-9 w-full rounded-lg border border-[#e8e4ed] px-2 text-[9px]" /></label><textarea name="notes" maxLength={2000} rows={2} placeholder="Agenda (optional)" className="w-full rounded-lg border border-[#e8e4ed] p-2 text-[9px]" /><button className="h-8 w-full rounded-lg bg-[#17132d] text-[9px] font-extrabold text-white">Save session</button></form>}
                   <div className="mt-3 space-y-2">{detail.sessions.filter((session) => session.status === "scheduled").map((session) => {
@@ -411,7 +431,7 @@ export function StudyGroups({ courses, inviteToken }: { courses: Course[]; invit
                     const endsAt = Date.parse(session.ends_at);
                     const isCallTime = Number.isFinite(startsAt) && Number.isFinite(endsAt)
                       && callClock >= startsAt - 30 * 60 * 1000 && callClock < endsAt;
-                    return <div key={session.id} className="rounded-xl bg-[#f7f5ff] p-3"><p className="text-[10px] font-extrabold">{session.title}</p><p className="mt-1 text-[8px] text-[#726b80]">{formatDate(session.starts_at)} – {formatDate(session.ends_at)}</p>{session.notes && <p className="mt-1 text-[9px] leading-4 text-[#898391]">{session.notes}</p>}
+                    return <div key={session.id} className="min-w-0 rounded-xl bg-[#f7f5ff] p-3"><p className="break-words text-[10px] font-extrabold">{session.title}</p><p className="mt-1 break-words text-[8px] leading-4 text-[#726b80]">{formatDate(session.starts_at)} – {formatDate(session.ends_at)}</p>{session.notes && <p className="mt-1 break-words text-[9px] leading-4 text-[#898391]">{session.notes}</p>}
                       {detail.callEnabled && isCallTime && <button type="button" onClick={() => setCallSession(session)} className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-3 text-[9px] font-extrabold text-white"><Video className="size-3.5" /> Join call</button>}
                       {detail.callEnabled && Number.isFinite(startsAt) && callClock < startsAt - 30 * 60 * 1000 && <p className="mt-2 text-[8px] font-semibold text-[#81798c]">Call opens 30 minutes before the start.</p>}
                       {!detail.callEnabled && <p className="mt-2 text-[8px] text-[#81798c]">Calls are unavailable until the Jitsi provider is configured.</p>}
