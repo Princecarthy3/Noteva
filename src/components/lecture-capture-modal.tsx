@@ -8,6 +8,8 @@ import {
   FileVideo,
   LoaderCircle,
   Mic2,
+  Pause,
+  Play,
   RotateCcw,
   Sparkles,
   Square,
@@ -30,12 +32,15 @@ export function LectureCaptureModal({
   title,
   setTitle,
   recording,
+  paused,
   seconds,
   recorded,
   liveTranscript,
   interimTranscript,
   captionStatus,
   start,
+  pause,
+  resume,
   stop,
   processRecording,
   processing,
@@ -52,12 +57,15 @@ export function LectureCaptureModal({
   title: string;
   setTitle: (title: string) => void;
   recording: boolean;
+  paused: boolean;
   seconds: number;
   recorded: Blob | null;
   liveTranscript: string;
   interimTranscript: string;
   captionStatus: string;
   start: () => void;
+  pause: () => void;
+  resume: () => void;
   stop: () => void;
   processRecording: (title?: string) => void;
   processing: boolean;
@@ -215,7 +223,7 @@ export function LectureCaptureModal({
               </p>
               <p className="mt-0.5 text-[9px] font-bold text-white/60">
                 {recording
-                  ? "Recording in progress · Speak clearly"
+                  ? paused ? "Recording paused · Resume when you’re ready" : "Recording in progress · Speak clearly"
                   : recorded
                   ? "Recording captured · Ready to review"
                   : "Record a lecture or class presentation"}
@@ -235,14 +243,24 @@ export function LectureCaptureModal({
                 )}
 
                 {recording && (
-                  <button
-                    type="button"
-                    onClick={stop}
-                    className="grid size-14 place-items-center rounded-full bg-[#ef6862] shadow-[0_0_0_8px_rgba(239,104,98,.2)] hover:scale-105 active:scale-95 transition animate-pulse"
-                    aria-label="Stop recording"
-                  >
-                    <Square className="size-5 fill-white text-white" />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={paused ? resume : pause}
+                      className="grid size-12 place-items-center rounded-full bg-white/15 hover:bg-white/25 transition"
+                      aria-label={paused ? "Resume recording" : "Pause recording"}
+                    >
+                      {paused ? <Play className="size-5 fill-white text-white" /> : <Pause className="size-5 fill-white text-white" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stop}
+                      className="grid size-14 place-items-center rounded-full bg-[#ef6862] shadow-[0_0_0_8px_rgba(239,104,98,.2)] hover:scale-105 active:scale-95 transition"
+                      aria-label="Stop recording"
+                    >
+                      <Square className="size-5 fill-white text-white" />
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -303,7 +321,7 @@ export function LectureCaptureModal({
               >
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-[10px] font-extrabold text-[#373145]">Live transcription</h3>
-                  {recording && (
+                  {recording && !paused && (
                     <span className="flex items-center gap-1.5 text-[9px] font-bold text-[#7259e8]">
                       <span className="size-1.5 animate-pulse rounded-full bg-[#7259e8]" />
                       Listening
@@ -318,7 +336,7 @@ export function LectureCaptureModal({
                   </p>
                 ) : (
                   <p className="mt-2 text-[10px] leading-4 text-[#8a8494]">
-                    {recording ? "Your words will appear here as you speak." : "No live captions were captured."}
+                    {recording ? paused ? "Recording is paused." : "Your words will appear here as you speak." : "No live captions were captured."}
                   </p>
                 )}
                 {captionStatus && <p className="mt-2 text-[9px] leading-4 text-[#8a8494]">{captionStatus}</p>}

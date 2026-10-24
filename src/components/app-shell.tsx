@@ -204,6 +204,7 @@ export function AppShell({
     setToast({ message, tone });
   }, []);
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -234,6 +235,7 @@ export function AppShell({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const recordingPausedRef = useRef(false);
   const chunksRef = useRef<Blob[]>([]);
   const liveTranscriptRef = useRef("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -325,10 +327,10 @@ export function AppShell({
   }, [toast]);
 
   useEffect(() => {
-    if (!isRecording) return;
+    if (!isRecording || isRecordingPaused) return;
     const interval = window.setInterval(() => setRecordingSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(interval);
-  }, [isRecording]);
+  }, [isRecording, isRecordingPaused]);
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
 
@@ -362,10 +364,14 @@ export function AppShell({
         setRecordedBlob(new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }));
         stream.getTracks().forEach((track) => track.stop());
         setIsRecording(false);
+        setIsRecordingPaused(false);
+        recordingPausedRef.current = false;
       };
       mediaRecorderRef.current = recorder;
       setRecordingSeconds(0);
       setRecordedBlob(null);
+      recordingPausedRef.current = false;
+      setIsRecordingPaused(false);
       recorder.start(1000);
       setIsRecording(true);
 
@@ -403,7 +409,15 @@ export function AppShell({
         setCaptionStatus(status);
       };
       recognition.onend = () => {
-        if (recognitionRef.current === recognition) recognitionRef.current = null;
+        if (recognitionRef.current !== recognition) return;
+        if (recordingPausedRef.current) return;
+        if (mediaRecorderRef.current?.state === "recording") {
+          try {
+            recognition.start();
+            return;
+          } catch {}
+        }
+        recognitionRef.current = null;
       };
       recognitionRef.current = recognition;
       setCaptionStatus("Live captions are on. Captions use your browser's speech recognition service.");
@@ -418,12 +432,37 @@ export function AppShell({
     }
   }
 
+  function pauseRecording() {
+    if (mediaRecorderRef.current?.state !== "recording") return;
+    mediaRecorderRef.current.pause();
+    recordingPausedRef.current = true;
+    setIsRecordingPaused(true);
+    recognitionRef.current?.stop();
+    setInterimTranscript("");
+  }
+
+  function resumeRecording() {
+    if (mediaRecorderRef.current?.state !== "paused") return;
+    mediaRecorderRef.current.resume();
+    recordingPausedRef.current = false;
+    setIsRecordingPaused(false);
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      try {
+        recognition.start();
+      } catch {
+        setCaptionStatus("Recording resumed. Live captions could not restart, but the audio is still being recorded.");
+      }
+    }
+  }
+
   function stopRecording() {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
     if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+    if (mediaRecorderRef.current?.state === "paused") mediaRecorderRef.current.stop();
   }
 
   function resetRecording() {
@@ -438,6 +477,8 @@ export function AppShell({
     chunksRef.current = [];
     setRecordedBlob(null);
     setIsRecording(false);
+    setIsRecordingPaused(false);
+    recordingPausedRef.current = false;
     setRecordingSeconds(0);
     setLiveTranscript("");
     setInterimTranscript("");
@@ -1036,12 +1077,15 @@ export function AppShell({
           title={lectureTitle}
           setTitle={setLectureTitle}
           recording={isRecording}
+          paused={isRecordingPaused}
           seconds={recordingSeconds}
           recorded={recordedBlob}
           liveTranscript={liveTranscript}
           interimTranscript={interimTranscript}
           captionStatus={captionStatus}
           start={startRecording}
+          pause={pauseRecording}
+          resume={resumeRecording}
           stop={stopRecording}
           processRecording={processRecording}
           processing={processing}
