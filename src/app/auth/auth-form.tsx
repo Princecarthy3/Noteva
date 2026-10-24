@@ -143,7 +143,7 @@ export function AuthForm({ mode, notice, setupMessage, nextPath = "/app" }: { mo
               {mode === "update" ? "New password" : "Password"}
               <span className="relative mt-2 block">
                 <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#a29baa]" aria-hidden="true" />
-                <input name="password" type={showPassword ? "text" : "password"} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={8} maxLength={128} className="h-12 w-full rounded-xl border border-[#e5e1ec] bg-white pl-10 pr-12 text-sm outline-none focus:border-[#a99aec]" />
+                <input name="password" type={showPassword ? "text" : "password"} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={mode === "login" ? undefined : 8} maxLength={128} className="h-12 w-full rounded-xl border border-[#e5e1ec] bg-white pl-10 pr-12 text-sm outline-none focus:border-[#a99aec]" />
                 <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute right-3 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-lg text-[#8c8795] hover:bg-[#f3f0f7] hover:text-[#514a66]">{showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
               </span>
               {(mode === "register" || mode === "update") && <span className="mt-1.5 block text-[11px] font-medium text-[#8c8795]">Use at least 8 characters.</span>}

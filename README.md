@@ -42,7 +42,7 @@ This is a forward-only migration. Do not reset a shared or production database t
 
 ## Authentication and onboarding
 
-Stage 5 uses Supabase email/password auth. Apply migrations in order:
+Stage 5 uses Supabase email/password auth, with Google sign-in and registration through Supabase OAuth. Apply migrations in order:
 
 1. `20261020000000_university_platform_stage4.sql`
 2. `20261020005000_auth_onboarding_progress.sql`
@@ -59,11 +59,12 @@ Stage 5 uses Supabase email/password auth. Apply migrations in order:
 For local verification, set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_APP_URL=http://localhost:3000` in `.env.local`. In Supabase Auth settings:
 
 - Enable email/password sign-in and choose whether email confirmation is required.
+- Enable Google as a provider in Supabase Auth and configure its OAuth client credentials and redirect URI.
 - Set the local Site URL to `http://localhost:3000`.
 - Add `http://localhost:3000/auth/callback` to the redirect URL allowlist.
 - For deployment, set `NEXT_PUBLIC_APP_URL` to the verified HTTPS app URL and allowlist its `/auth/callback` URL.
 
-Registration and password recovery use that callback route. If confirmation is enabled, the student completes onboarding after opening the verification email. Password-reset requests always show a neutral response so they do not reveal whether an email is registered. OAuth providers are intentionally not enabled.
+Registration, Google OAuth, and password recovery use that callback route. If confirmation is enabled, the student completes onboarding after opening the verification email. Password-reset requests always show a neutral response so they do not reveal whether an email is registered. Both email/password and Google are available on the login and registration pages.
 
 Onboarding progress and profile/course writes use the authenticated Supabase session and RLS, not the service-role key or the privileged Drizzle connection. The university catalog is optional; when it is empty or unavailable, students can enter their university manually. Course code/title entries are saved to the student's personal `courses` records.
 
