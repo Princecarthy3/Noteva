@@ -194,7 +194,10 @@ export function AppShell({
   const { theme, setTheme } = useTheme();
   const { openInstallInstructions } = useInstallApp();
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone?: "success" | "error" | "info" } | null>(null);
+  const showToast = useCallback((message: string, tone: "success" | "error" | "info" = "success") => {
+    setToast({ message, tone });
+  }, []);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -254,7 +257,7 @@ export function AppShell({
 
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(null), 3600);
+    const timeout = window.setTimeout(() => setToast(null), toast.tone === "error" ? 5200 : 3200);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
@@ -276,7 +279,7 @@ export function AppShell({
   async function startRecording() {
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-        setToast("Live recording isn’t supported in this browser. Try uploading a file instead.");
+        showToast("Live recording isn’t supported in this browser. Try uploading a file instead.", "error");
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -348,7 +351,7 @@ export function AppShell({
         setCaptionStatus("Live captions could not start in this browser. The recording can still be transcribed after you stop.");
       }
     } catch {
-      setToast("Microphone access was blocked. Allow access or upload a lecture file.");
+      showToast("Microphone access was blocked. Allow access or upload a lecture file.", "error");
     }
   }
 
@@ -444,24 +447,24 @@ export function AppShell({
         setModal(null);
         setView("lectures");
         setAutoOpenLectureId(created.lectureId);
-        setToast(processed.error || (isDoc ? "The document was uploaded but could not be parsed yet. Retry it from Lecture Studio." : "The lecture was uploaded but could not be transcribed yet. Retry it from Lecture Studio."));
+        showToast(processed.error || (isDoc ? "The document was uploaded but could not be parsed yet. Retry it from Lecture Studio." : "The lecture was uploaded but could not be transcribed yet. Retry it from Lecture Studio."), "error");
         setLectureTitle("");
         router.refresh();
         return;
       }
       // Automatically trigger AI note organization upon successful transcription / extraction
-      setToast(isDoc ? "Document extracted! Organizing into structured notes with AI..." : "Transcription finished! Organizing into structured notes with AI...");
+      showToast(isDoc ? "Document extracted! Organizing into structured notes with AI..." : "Transcription finished! Organizing into structured notes with AI...", "info");
       try {
         const noteResponse = await fetch(`/api/lectures/${created.lectureId}/notes`, {
           method: "POST",
         });
         if (noteResponse.ok) {
-          setToast(isDoc ? "Lecture document organized into study notes!" : "Lecture transcribed and organized into study notes!");
+          showToast(isDoc ? "Lecture document organized into study notes!" : "Lecture transcribed and organized into study notes!", "success");
         } else {
-          setToast(isDoc ? "Lecture text ready. You can generate notes from the lecture view." : "Lecture transcript ready. You can generate notes from the lecture view.");
+          showToast(isDoc ? "Lecture text ready. You can generate notes from the lecture view." : "Lecture transcript ready. You can generate notes from the lecture view.", "success");
         }
       } catch {
-        setToast(isDoc ? "Lecture text ready. You can generate notes anytime from the lecture view." : "Lecture transcript ready. You can generate notes anytime from the lecture view.");
+        showToast(isDoc ? "Lecture text ready. You can generate notes anytime from the lecture view." : "Lecture transcript ready. You can generate notes anytime from the lecture view.", "success");
       }
       setModal(null);
       setView("lectures");
@@ -470,7 +473,7 @@ export function AppShell({
       setLectureTitle("");
       router.refresh();
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "We couldn’t process that lecture.");
+      showToast(error instanceof Error ? error.message : "We couldn’t process that lecture.", "error");
       router.refresh();
     } finally {
       setProcessing(false);
@@ -501,7 +504,7 @@ export function AppShell({
     if (!file) return;
     const maxSize = 25 * 1024 * 1024;
     if (file.size > maxSize) {
-      setToast("Lecture files must be 25 MB or smaller.");
+      showToast("Lecture files must be 25 MB or smaller.", "error");
       return;
     }
     await submitLecture(file, title);
@@ -583,7 +586,7 @@ export function AppShell({
       {sidebarOpen && (
         <button
           aria-label="Close navigation"
-          className="fixed inset-0 z-40 bg-[#17132d]/50 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-[#17132d]/45 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -691,7 +694,7 @@ export function AppShell({
       {/* Main Content Area */}
       <div className="min-h-screen lg:pl-[252px]">
         {/* Glass Header */}
-        <header className="sticky top-0 z-30 flex h-[66px] items-center border-b border-[#e9e6ef]/80 bg-white/75 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-30 flex h-[66px] items-center border-b border-[#e9e6ef] bg-[#fbfaff]/95 px-4 sm:px-6 lg:px-8">
           <button
             onClick={() => setSidebarOpen(true)}
             className="mr-3 grid size-9 place-items-center rounded-xl border border-[#e8e4ef] bg-white lg:hidden"
@@ -836,6 +839,7 @@ export function AppShell({
               loadError={dashboardData.errors.lectures}
               autoOpenLectureId={autoOpenLectureId}
               onAutoOpen={clearAutoOpenLecture}
+              onToast={showToast}
               onUpload={() => {
                 setModal("capture");
                 setSourceTab("upload");
@@ -1002,8 +1006,8 @@ export function AppShell({
       )}
 
       {processing && !modal && (
-        <div className="fixed inset-0 z-[90] grid place-items-center bg-[#17132d]/45 backdrop-blur-sm">
-          <div className="glass-panel rounded-[28px] p-8 text-center shadow-2xl">
+        <div className="fixed inset-0 z-[90] grid place-items-center bg-[#17132d]/40">
+          <div className="rounded-[28px] border border-[#e9e5ef] bg-white p-8 text-center shadow-2xl">
             <LoaderCircle className="mx-auto size-8 animate-spin text-[#7259e8]" />
             <p className="mt-4 text-base font-extrabold text-[#17132d]">Processing Lecture…</p>
             <p className="mt-1 text-xs text-[#8a8494]">Uploading to private cloud storage and initializing transcription</p>
@@ -1014,12 +1018,23 @@ export function AppShell({
       {reviewModalOpen && <ReviewModal onClose={() => setReviewModalOpen(false)} />}
 
       {toast && (
-        <div className="fixed bottom-24 left-1/2 z-[100] flex w-[calc(100%-32px)] max-w-md -translate-x-1/2 items-start gap-3 rounded-2xl bg-[#17132d] px-4 py-3.5 text-white shadow-2xl lg:bottom-7">
-          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#7259e8]">
-            <Check className="size-3.5" />
+        <div
+          role="status"
+          className={`fixed bottom-24 left-1/2 z-[100] flex w-[calc(100%-32px)] max-w-md -translate-x-1/2 items-start gap-3 rounded-2xl px-4 py-3.5 text-white shadow-2xl lg:bottom-7 ${
+            toast.tone === "error"
+              ? "bg-[#7a2430]"
+              : toast.tone === "info"
+                ? "bg-[#2f2a4a]"
+                : "bg-[#17132d]"
+          }`}
+        >
+          <span className={`grid size-6 shrink-0 place-items-center rounded-full ${
+            toast.tone === "error" ? "bg-[#c44b57]" : "bg-[#7259e8]"
+          }`}>
+            {toast.tone === "error" ? <X className="size-3.5" /> : <Check className="size-3.5" />}
           </span>
-          <p className="pt-0.5 text-[11px] font-semibold leading-5">{toast}</p>
-          <button onClick={() => setToast(null)} className="ml-auto text-white/50 hover:text-white">
+          <p className="pt-0.5 text-[11px] font-semibold leading-5">{toast.message}</p>
+          <button type="button" onClick={() => setToast(null)} className="ml-auto text-white/50 hover:text-white" aria-label="Dismiss notification">
             <X className="size-4" />
           </button>
         </div>

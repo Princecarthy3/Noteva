@@ -47,6 +47,7 @@ import { SiteHeader } from "@/components/site-header";
 import { footerLinkGroups } from "@/components/info-page";
 import { landingUniversities } from "@/lib/universities";
 import { ReviewSection } from "@/components/review-section";
+import { ForceLightTheme } from "@/components/force-light-theme";
 
 const waveform = [18, 30, 46, 22, 58, 36, 68, 42, 24, 52, 76, 44, 62, 26, 54, 70, 40, 22, 48, 32, 64, 42, 26, 38];
 
@@ -85,13 +86,14 @@ export default function LandingPage() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#fbfaff] text-[#17132d]">
+      <ForceLightTheme />
       <SiteHeader />
 
       {/* Hero Section */}
       <section className="hero-glow soft-grid relative border-b border-[#ebe8f3]/80 px-5 pb-20 pt-16 sm:pt-24 lg:pb-32 lg:pt-28">
         <div className="relative z-10 mx-auto max-w-[1240px] text-center">
           {/* Glass Top Badge */}
-          <div className="fade-up mx-auto inline-flex items-center gap-2.5 rounded-full border border-[#dcd6ff]/80 bg-white/70 px-4 py-2 text-[12px] font-extrabold text-[#5d48ca] shadow-[0_8px_30px_rgba(114,89,232,0.12)] backdrop-blur-xl">
+          <div className="fade-up mx-auto inline-flex items-center gap-2.5 rounded-full border border-[#dcd6ff]/80 bg-white px-4 py-2 text-[12px] font-extrabold text-[#5d48ca] shadow-[0_8px_30px_rgba(114,89,232,0.12)]">
             <span className="grid size-5 place-items-center rounded-full bg-gradient-to-tr from-[#7259e8] to-[#9b83ff] text-white shadow-sm">
               <Sparkles className="size-3" />
             </span>

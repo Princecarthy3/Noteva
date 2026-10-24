@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Archive,
@@ -603,6 +603,7 @@ export function LectureStudio({
   autoOpenLectureId,
   onAutoOpen,
   onUpload,
+  onToast,
 }: {
   lectures: Stage6Lecture[];
   courses: Stage6Course[];
@@ -611,6 +612,7 @@ export function LectureStudio({
   autoOpenLectureId: string | null;
   onAutoOpen: () => void;
   onUpload: () => void;
+  onToast?: (message: string, tone?: "success" | "error" | "info") => void;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<LectureDetail | null>(null);
@@ -631,7 +633,31 @@ export function LectureStudio({
   }, []);
 
   const openLecture = useCallback(async (id: string) => {
-    if (selected?.id === id && !error) return;
+    if (selected?.id === id && !error && !busy) return;
+
+    const preview = lectures.find((lecture) => lecture.id === id);
+    // Optimistic selection so the right panel reacts immediately.
+    if (preview) {
+      setSelected({
+        id: preview.id,
+        title: preview.title,
+        status: preview.status,
+        createdAt: preview.createdAt,
+        durationSeconds: preview.durationSeconds,
+        courseId: preview.courseId,
+        transcript: preview.transcript ?? null,
+        note: preview.note ?? null,
+        sourceType: preview.sourceType ?? "recording",
+        mediaUrl: preview.mediaUrl ?? null,
+        mimeType: null,
+        processingError: null,
+        updatedAt: preview.createdAt,
+      } as LectureDetail);
+      setTranscriptDraft(preview.transcript ?? "");
+      setStudioTab(preview.note ? "notes" : "transcript");
+      setDirty(false);
+    }
+
     setBusy(true);
     setError("");
     setNotice("");
@@ -646,37 +672,25 @@ export function LectureStudio({
     } finally {
       setBusy(false);
     }
-  }, [error, fetchLectureDetail, selected?.id]);
+  }, [busy, error, fetchLectureDetail, lectures, selected?.id]);
 
   useEffect(() => {
     if (!autoOpenLectureId || !lectures.some((lecture) => lecture.id === autoOpenLectureId)) return;
     onAutoOpen();
-    let active = true;
-    setBusy(true);
-    void fetchLectureDetail(autoOpenLectureId).then((lecture) => {
-      if (!active) return;
-      setSelected(lecture);
-      setTranscriptDraft(lecture.transcript ?? "");
-      setStudioTab(lecture.note ? "notes" : "transcript");
-      setDirty(false);
-      setError("");
-    }).catch((cause) => {
-      if (active) setError(cause instanceof Error ? cause.message : "Lecture could not be loaded.");
-    }).finally(() => {
-      if (active) setBusy(false);
-    });
-    return () => {
-      active = false;
-    };
-  }, [autoOpenLectureId, fetchLectureDetail, lectures, onAutoOpen]);
+    void openLecture(autoOpenLectureId);
+  }, [autoOpenLectureId, lectures, onAutoOpen, openLecture]);
 
-  // Auto-open the most recent ready lecture when the studio first loads with data.
+  // Auto-open the most recent ready lecture once when the studio mounts with data.
+  const didAutoOpenRef = useRef(false);
   useEffect(() => {
-    if (selected || busy || autoOpenLectureId || !lectures.length) return;
+    if (didAutoOpenRef.current || selected || busy || autoOpenLectureId || !lectures.length) return;
     const firstReady = [...lectures]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .find((lecture) => lecture.status === "ready");
-    if (firstReady) void openLecture(firstReady.id);
+    if (firstReady) {
+      didAutoOpenRef.current = true;
+      void openLecture(firstReady.id);
+    }
   }, [autoOpenLectureId, busy, lectures, openLecture, selected]);
 
   async function saveTranscript() {
@@ -695,9 +709,12 @@ export function LectureStudio({
       setSelected({ ...selected, transcript: transcriptDraft });
       setDirty(false);
       setNotice("Transcript saved.");
+      onToast?.("Transcript saved.", "success");
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Transcript could not be saved.");
+      const message = cause instanceof Error ? cause.message : "Transcript could not be saved.";
+      setError(message);
+      onToast?.(message, "error");
     } finally {
       setBusy(false);
     }
@@ -716,10 +733,14 @@ export function LectureStudio({
       if (!response.ok || !body.note) throw new Error(body.error || "Could not generate organized notes.");
       setSelected({ ...selected, note: body.note });
       setStudioTab("notes");
-      setNotice(body.message || "Organized study notes generated successfully!");
+      const successMessage = body.message || "Organized study notes generated successfully!";
+      setNotice(successMessage);
+      onToast?.(successMessage, "success");
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Note generation failed.");
+      const message = cause instanceof Error ? cause.message : "Note generation failed.";
+      setError(message);
+      onToast?.(message, "error");
     } finally {
       setGeneratingNotes(false);
     }
@@ -761,6 +782,7 @@ export function LectureStudio({
         setTranscriptDraft("");
       }
       setNotice("Lecture and associated study content deleted.");
+      onToast?.("Lecture deleted.", "success");
       router.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Lecture could not be deleted.");
@@ -772,8 +794,14 @@ export function LectureStudio({
   function copyTranscript() {
     if (!selected?.transcript) return;
     void navigator.clipboard.writeText(transcriptDraft).then(
-      () => setNotice("Transcript copied."),
-      () => setError("Clipboard access was unavailable. Select and copy the transcript manually."),
+      () => {
+        setNotice("Transcript copied.");
+        onToast?.("Transcript copied.", "success");
+      },
+      () => {
+        setError("Clipboard access was unavailable. Select and copy the transcript manually.");
+        onToast?.("Clipboard access was unavailable.", "error");
+      },
     );
   }
 
@@ -793,8 +821,14 @@ export function LectureStudio({
     const courseName = selected.courseId ? courseNames.get(selected.courseId) : undefined;
     const md = formatNoteMarkdown(selected.note, selected.title, courseName);
     void navigator.clipboard.writeText(md).then(
-      () => setNotice("Organized study notes copied as Markdown!"),
-      () => setError("Clipboard access unavailable.")
+      () => {
+        setNotice("Organized study notes copied as Markdown!");
+        onToast?.("Notes copied as Markdown.", "success");
+      },
+      () => {
+        setError("Clipboard access unavailable.");
+        onToast?.("Clipboard access unavailable.", "error");
+      }
     );
   }
 
@@ -804,6 +838,8 @@ export function LectureStudio({
     try {
       exportNoteToPdf(selected.note, selected.title, courseName);
       setNotice("Organized study guide PDF downloaded!");
+      onToast?.("Study guide PDF downloaded.", "success");
+      onToast?.("Study guide PDF downloaded.", "success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate PDF.");
     }

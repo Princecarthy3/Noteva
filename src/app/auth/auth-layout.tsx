@@ -2,10 +2,12 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpenCheck, Sparkles } from "lucide-react";
 import { Brand } from "@/components/brand";
+import { ForceLightTheme } from "@/components/force-light-theme";
 
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <main className="hero-glow relative min-h-screen overflow-hidden bg-[#fbfaff] px-4 py-6 sm:px-8">
+      <ForceLightTheme />
       <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-[1180px] flex-col">
         <header className="flex items-center justify-between">
           <Brand />
