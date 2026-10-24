@@ -631,6 +631,7 @@ export function LectureStudio({
   }, []);
 
   const openLecture = useCallback(async (id: string) => {
+    if (selected?.id === id && !error) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -638,24 +639,25 @@ export function LectureStudio({
       const lecture = await fetchLectureDetail(id);
       setSelected(lecture);
       setTranscriptDraft(lecture.transcript ?? "");
-      setStudioTab("notes");
+      setStudioTab(lecture.note ? "notes" : "transcript");
       setDirty(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Lecture could not be loaded.");
     } finally {
       setBusy(false);
     }
-  }, [fetchLectureDetail]);
+  }, [error, fetchLectureDetail, selected?.id]);
 
   useEffect(() => {
     if (!autoOpenLectureId || !lectures.some((lecture) => lecture.id === autoOpenLectureId)) return;
     onAutoOpen();
     let active = true;
+    setBusy(true);
     void fetchLectureDetail(autoOpenLectureId).then((lecture) => {
       if (!active) return;
       setSelected(lecture);
       setTranscriptDraft(lecture.transcript ?? "");
-      setStudioTab("notes");
+      setStudioTab(lecture.note ? "notes" : "transcript");
       setDirty(false);
       setError("");
     }).catch((cause) => {
@@ -667,6 +669,15 @@ export function LectureStudio({
       active = false;
     };
   }, [autoOpenLectureId, fetchLectureDetail, lectures, onAutoOpen]);
+
+  // Auto-open the most recent ready lecture when the studio first loads with data.
+  useEffect(() => {
+    if (selected || busy || autoOpenLectureId || !lectures.length) return;
+    const firstReady = [...lectures]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .find((lecture) => lecture.status === "ready");
+    if (firstReady) void openLecture(firstReady.id);
+  }, [autoOpenLectureId, busy, lectures, openLecture, selected]);
 
   async function saveTranscript() {
     if (!selected) return;
@@ -821,11 +832,63 @@ export function LectureStudio({
     <div className="mt-5 grid gap-5 xl:grid-cols-[.72fr_1.28fr]">
       <section className="rounded-[24px] border border-[#e9e5ef] bg-white p-4 sm:p-5">
         <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-extrabold">Recent lectures</h2><span className="text-[10px] text-[#8a8494]">{sortedLectures.length}</span></div>
-        {loadError ? <SectionError>Lecture history could not be loaded. Check the Stage 4 migration and refresh.</SectionError> : sortedLectures.length ? <ul className="space-y-2">{sortedLectures.map((lecture) => <li key={lecture.id}><div className={`flex items-center gap-2 rounded-2xl border p-3 ${selected?.id === lecture.id ? "border-[#c8bcf2] bg-[#f8f6ff]" : "border-[#f0edf4]"}`}><button type="button" onClick={() => void openLecture(lecture.id)} className="min-w-0 flex-1 text-left"><span className="block truncate text-xs font-extrabold">{lecture.title}</span><span className="mt-1 block truncate text-[10px] text-[#85808d]">{lecture.courseId ? courseNames.get(lecture.courseId) ?? "Course" : "Unassigned"} · {displayDate(lecture.createdAt, timezone)}</span>{lecture.note && <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-[#f3f0ff] px-1.5 py-0.5 text-[8px] font-extrabold text-[#7259e8]"><Sparkles className="size-2.5" /> Notes ready</span>}</button><span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase ${lecture.status === "ready" ? "bg-[#e5f7ed] text-[#2f946f]" : lecture.status === "failed" ? "bg-[#fff0ee] text-[#ae544d]" : "bg-[#fff4db] text-[#9b741f]"}`}>{lecture.status}</span>{lecture.status !== "ready" && lecture.status !== "processing" && <button type="button" disabled={busy} aria-label={`Retry ${lecture.title}`} onClick={() => void retryLecture(lecture.id)} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#7259e8] hover:bg-[#f1edff] disabled:opacity-50"><RefreshCw className="size-3.5" /></button>}<button type="button" disabled={busy || lecture.status === "processing"} aria-label={`Delete ${lecture.title}`} onClick={() => void deleteLecture(lecture)} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#85808d] hover:bg-[#fff1ef] hover:text-[#a44e48] disabled:opacity-50"><Trash2 className="size-3.5" /></button></div></li>)}</ul> : <EmptyState title="No lectures yet" copy="Upload an authorized audio or video recording, or lecture document to create your first notes." action={<button type="button" onClick={onUpload} className="text-xs font-extrabold text-[#7259e8]">Upload a lecture</button>} />}
+        {loadError ? <SectionError>Lecture history could not be loaded. Check the Stage 4 migration and refresh.</SectionError> : sortedLectures.length ? <ul className="space-y-2">{sortedLectures.map((lecture) => {
+            const isActive = selected?.id === lecture.id;
+            return (
+              <li key={lecture.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => void openLecture(lecture.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      void openLecture(lecture.id);
+                    }
+                  }}
+                  className={`flex cursor-pointer items-center gap-2 rounded-2xl border p-3 transition ${isActive ? "border-[#c8bcf2] bg-[#f8f6ff] shadow-sm" : "border-[#f0edf4] hover:border-[#d9d0f5] hover:bg-[#fbfaff]"}`}
+                >
+                  <div className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-xs font-extrabold">{lecture.title}</span>
+                    <span className="mt-1 block truncate text-[10px] text-[#85808d]">{lecture.courseId ? courseNames.get(lecture.courseId) ?? "Course" : "Unassigned"} · {displayDate(lecture.createdAt, timezone)}</span>
+                    {lecture.note && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-[#f3f0ff] px-1.5 py-0.5 text-[8px] font-extrabold text-[#7259e8]">
+                        <Sparkles className="size-2.5" /> Notes ready
+                      </span>
+                    )}
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase ${lecture.status === "ready" ? "bg-[#e5f7ed] text-[#2f946f]" : lecture.status === "failed" ? "bg-[#fff0ee] text-[#ae544d]" : "bg-[#fff4db] text-[#9b741f]"}`}>{lecture.status}</span>
+                  {lecture.status !== "ready" && lecture.status !== "processing" && (
+                    <button type="button" disabled={busy} aria-label={`Retry ${lecture.title}`} onClick={(event) => { event.stopPropagation(); void retryLecture(lecture.id); }} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#7259e8] hover:bg-[#f1edff] disabled:opacity-50">
+                      <RefreshCw className="size-3.5" />
+                    </button>
+                  )}
+                  <button type="button" disabled={busy || lecture.status === "processing"} aria-label={`Delete ${lecture.title}`} onClick={(event) => { event.stopPropagation(); void deleteLecture(lecture); }} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#85808d] hover:bg-[#fff1ef] hover:text-[#a44e48] disabled:opacity-50">
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              </li>
+            );
+          })}</ul> : <EmptyState title="No lectures yet" copy="Upload an authorized audio or video recording, or lecture document to create your first notes." action={<button type="button" onClick={onUpload} className="text-xs font-extrabold text-[#7259e8]">Upload a lecture</button>} />}
       </section>
 
       <section className="min-h-[420px] rounded-[24px] border border-[#e9e5ef] bg-white p-4 sm:p-6">
-        {!selected ? <div className="grid h-full min-h-[360px] place-items-center text-center"><div><span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#f0edff] text-[#7259e8]"><FileText className="size-5" /></span><h2 className="mt-4 text-sm font-extrabold">Transcript & notes workspace</h2><p className="mt-1 max-w-sm text-xs leading-5 text-[#8a8494]">Choose a completed lecture to view its organized AI notes or raw transcript. Use AI to extract key concepts, study questions, and summaries.</p></div></div> : <>
+        {!selected ? (
+          <div className="grid h-full min-h-[360px] place-items-center text-center">
+            <div>
+              <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#f0edff] text-[#7259e8]">
+                {busy ? <LoaderCircle className="size-5 animate-spin" /> : <FileText className="size-5" />}
+              </span>
+              <h2 className="mt-4 text-sm font-extrabold">{busy ? "Opening lecture…" : "Transcript & notes workspace"}</h2>
+              <p className="mt-1 max-w-sm text-xs leading-5 text-[#8a8494]">
+                {busy
+                  ? "Loading transcript and notes for the selected lecture."
+                  : "Choose a completed lecture to view its organized AI notes or raw transcript. Use AI to extract key concepts, study questions, and summaries."}
+              </p>
+              {error && <p role="alert" className="mx-auto mt-4 max-w-sm rounded-xl bg-[#fff1ef] px-3 py-2.5 text-xs text-[#a44e48]">{error}</p>}
+            </div>
+          </div>
+        ) : <>
           <div className="flex flex-col justify-between gap-3 border-b border-[#eeeaf2] pb-4 sm:flex-row sm:items-start">
             <div className="min-w-0">
               <p className="text-[9px] font-black uppercase tracking-[.12em] text-[#7259e8]">{selected.sourceType} · {selected.status}</p>

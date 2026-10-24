@@ -380,15 +380,31 @@ export function AppShell({
   async function submitLecture(file: File, requestedTitle?: string, sourceType?: "recording") {
     setProcessing(true);
     try {
+      const derivedFromFile = file.name
+        .replace(/\.[^.]+$/, "")
+        .replace(/[-_]+/g, " ")
+        .trim();
+      const isGenericFileName = !derivedFromFile || /^live recording$/i.test(derivedFromFile);
+      const course = courseValue ? courseMap.get(courseValue) : null;
+      const stamp = new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date());
+      const smartFallback = course
+        ? `${course.code} lecture · ${stamp}`
+        : `Lecture · ${stamp}`;
       const title =
         requestedTitle?.trim() ||
         lectureTitle.trim() ||
-        file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
+        (!isGenericFileName ? derivedFromFile : "") ||
+        smartFallback;
       const createResponse = await fetch("/api/lectures", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title || "New lecture",
+          title: title || smartFallback,
           courseId: courseValue || null,
           fileName: file.name,
           mimeType: file.type,
@@ -464,9 +480,19 @@ export function AppShell({
   async function processRecording(title?: string) {
     if (!recordedBlob) return;
     const extension = recordedBlob.type.includes("mp4") ? "m4a" : "webm";
+    const course = courseValue ? courseMap.get(courseValue) : null;
+    const stamp = new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date());
+    const fallbackTitle = course
+      ? `${course.code} lecture · ${stamp}`
+      : `Lecture · ${stamp}`;
     await submitLecture(
       new File([recordedBlob], `live-recording.${extension}`, { type: recordedBlob.type }),
-      title,
+      title?.trim() || lectureTitle.trim() || fallbackTitle,
       "recording"
     );
   }
