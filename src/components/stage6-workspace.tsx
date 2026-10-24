@@ -313,12 +313,14 @@ export function Stage6Courses({
   search,
   selectedCourseId,
   onOpenCourse,
+  onOpenLecture,
   onCapture,
 }: {
   data: Stage6DashboardData;
   search: string;
   selectedCourseId: string | null;
   onOpenCourse: (id: string | null) => void;
+  onOpenLecture: (lecture: Stage6Lecture) => void;
   onCapture: () => void;
 }) {
   const router = useRouter();
@@ -353,7 +355,7 @@ export function Stage6Courses({
     runAction(() => saveCourse(new FormData(form)), () => setEditing(undefined));
   }
 
-  const selectedTab = selectedCourse ? <CourseDetail course={selectedCourse} lectures={courseLectures} lectureError={data.errors.lectures} timezone={data.timezone} onBack={() => onOpenCourse(null)} onCapture={onCapture} /> : null;
+  const selectedTab = selectedCourse ? <CourseDetail course={selectedCourse} lectures={courseLectures} lectureError={data.errors.lectures} timezone={data.timezone} onBack={() => onOpenCourse(null)} onCapture={onCapture} onOpenLecture={onOpenLecture} /> : null;
 
   return <div className="fade-up">
     {selectedTab ? selectedTab : <>
@@ -1117,13 +1119,14 @@ export function LectureStudio({
   </div>;
 }
 
-function CourseDetail({ course, lectures, lectureError, timezone, onBack, onCapture }: {
+function CourseDetail({ course, lectures, lectureError, timezone, onBack, onCapture, onOpenLecture }: {
   course: Stage6Course;
   lectures: Stage6Lecture[];
   lectureError: boolean;
   timezone: string;
   onBack: () => void;
   onCapture: () => void;
+  onOpenLecture: (lecture: Stage6Lecture) => void;
 }) {
   const [tab, setTab] = useState<"overview" | "lectures">("overview");
   return <div>
@@ -1131,8 +1134,7 @@ function CourseDetail({ course, lectures, lectureError, timezone, onBack, onCapt
     <div className="rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-7">
       <div className="flex items-start gap-4"><span className="grid size-12 shrink-0 place-items-center rounded-2xl" style={{ color: course.color, backgroundColor: `${course.color}18` }}><BookOpen className="size-6" /></span><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.12em] text-[#85808d]">{course.code}{course.term ? ` · ${course.term}` : ""}</p><h1 className="mt-1 truncate text-2xl font-black tracking-[-.7px]">{course.title}</h1><p className="mt-1 text-xs text-[#85808d]">Your personal course workspace</p></div></div>
       <div className="mt-6 flex gap-2 border-b border-[#eeeaf2]"><button type="button" onClick={() => setTab("overview")} className={`border-b-2 px-3 py-2 text-xs font-extrabold ${tab === "overview" ? "border-[#7259e8] text-[#7259e8]" : "border-transparent text-[#85808d]"}`}>Overview</button><button type="button" onClick={() => setTab("lectures")} className={`border-b-2 px-3 py-2 text-xs font-extrabold ${tab === "lectures" ? "border-[#7259e8] text-[#7259e8]" : "border-transparent text-[#85808d]"}`}>Lectures</button></div>
-      {tab === "overview" ? <div className="grid gap-3 py-5 sm:grid-cols-2"><div className="rounded-2xl bg-[#f8f6ff] p-4"><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#85808d]">Lectures</p><p className="mt-2 text-2xl font-black">{lectures.length}</p><p className="mt-1 text-[10px] text-[#85808d]">saved to this course</p></div><div className="rounded-2xl bg-[#f7fbf8] p-4"><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#85808d]">Study resources</p><p className="mt-2 text-sm font-extrabold">Available in upcoming stages</p><p className="mt-1 text-[10px] leading-4 text-[#85808d]">Resources, flashcards, quizzes, course tasks, and groups will appear as those features are implemented.</p></div><div className="sm:col-span-2"><button type="button" onClick={onCapture} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white"><Plus className="size-4" /> Add a lecture</button></div></div> : <div className="py-5">{lectureError ? <SectionError>Course lectures could not be loaded. Refresh to try again.</SectionError> : lectures.length ? <ul className="divide-y divide-[#f0edf4]">{lectures.map((lecture) => <li key={lecture.id} className="flex items-center gap-3 py-3 first:pt-0"><span className="grid size-9 place-items-center rounded-xl bg-[#f3f0ff] text-[#7259e8]"><FileText className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{lecture.title}</p><p className="mt-1 text-[10px] text-[#85808d]">{lecture.status} · {displayDate(lecture.createdAt, timezone)}</p></div></li>)}</ul> : <EmptyState title="No lectures in this course yet" copy="Add a lecture to build a course-specific study space." action={<button type="button" onClick={onCapture} className="text-xs font-extrabold text-[#7259e8]">Upload a lecture</button>} />}</div>}
-      <div className="mt-2 border-t border-[#eeeaf2] pt-4"><p className="mb-3 text-[9px] font-black uppercase tracking-[.12em] text-[#9a94a3]">Planned workspace sections</p><div className="flex flex-wrap gap-2">{[[Layers3, "Flashcards"], [Sparkles, "Resources"], [Check, "Quizzes"], [CalendarDays, "Tasks"], [UsersRound, "Study groups"]].map(([Icon, label]) => <span key={label as string} className="inline-flex items-center gap-1.5 rounded-full bg-[#f4f2f7] px-3 py-1.5 text-[10px] font-bold text-[#85808d]"><Icon className="size-3" />{label as string} · later</span>)}</div></div>
+      {tab === "overview" ? <div className="grid gap-3 py-5 sm:grid-cols-2"><div className="rounded-2xl bg-[#f8f6ff] p-4"><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#85808d]">Lectures</p><p className="mt-2 text-2xl font-black">{lectures.length}</p><p className="mt-1 text-[10px] text-[#85808d]">saved to this course</p></div><div className="sm:col-span-2"><button type="button" onClick={onCapture} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white"><Plus className="size-4" /> Add a lecture</button></div></div> : <div className="py-5">{lectureError ? <SectionError>Course lectures could not be loaded. Refresh to try again.</SectionError> : lectures.length ? <ul className="divide-y divide-[#f0edf4]">{lectures.map((lecture) => <li key={lecture.id}><button type="button" onClick={() => onOpenLecture(lecture)} className="flex w-full items-center gap-3 py-3 text-left first:pt-0 hover:bg-[#fbfaff]"><span className="grid size-9 place-items-center rounded-xl bg-[#f3f0ff] text-[#7259e8]"><FileText className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-extrabold">{lecture.title}</span><span className="mt-1 block text-[10px] text-[#85808d]">{lecture.status} · {displayDate(lecture.createdAt, timezone)}</span></span><ArrowRight className="size-3.5 text-[#9993a0]" /></button></li>)}</ul> : <EmptyState title="No lectures in this course yet" copy="Add a lecture to build a course-specific study space." action={<button type="button" onClick={onCapture} className="text-xs font-extrabold text-[#7259e8]">Upload a lecture</button>} />}</div>}
     </div>
   </div>;
 }

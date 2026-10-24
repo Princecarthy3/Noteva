@@ -82,7 +82,7 @@ async function ProtectedWorkspace() {
       .order("starts_at", { ascending: true })
       .limit(10),
     supabase.from("lectures")
-      .select("id, title, status, created_at, duration_seconds, course_id, transcript")
+      .select("id, title, status, created_at, duration_seconds, course_id, transcript, source_type")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(100),
@@ -186,6 +186,7 @@ async function ProtectedWorkspace() {
       durationSeconds: lecture.duration_seconds,
       courseId: lecture.course_id,
       transcript: lecture.transcript,
+      sourceType: lecture.source_type,
       note: notesByLectureId.get(lecture.id) ?? null,
     })),
     errors: {

@@ -92,7 +92,7 @@ export async function GET(request: Request, context: RouteContext) {
     .limit(51);
   if (before) messagesQuery = messagesQuery.lt("created_at", before);
 
-  const [{ data: messages, error: messagesError }, { data: sessions, error: sessionsError }, { data: resources, error: resourcesError }, { data: ownResources, error: ownResourcesError }, { data: members, error: membersError }, { count, error: memberCountError }] = await Promise.all([
+  const [{ data: messages, error: messagesError }, { data: sessions, error: sessionsError }, { data: resources, error: resourcesError }, { data: ownResources, error: ownResourcesError }, { data: ownNotes, error: ownNotesError }, { data: members, error: membersError }, { count, error: memberCountError }] = await Promise.all([
     messagesQuery,
     auth.supabase.from("study_sessions")
       .select("id, title, starts_at, ends_at, status, notes")
@@ -111,26 +111,37 @@ export async function GET(request: Request, context: RouteContext) {
       .eq("visibility", "private")
       .order("created_at", { ascending: false })
       .limit(50),
+    auth.supabase.from("notes")
+      .select("id, title, lecture_id")
+      .eq("user_id", auth.user.id)
+      .order("created_at", { ascending: false })
+      .limit(50),
     auth.supabase.from("group_members")
       .select("user_id, role, joined_at")
       .eq("group_id", id)
       .order("joined_at", { ascending: true })
-      .limit(100),
+      .limit(1000),
     auth.supabase.from("group_members")
       .select("id", { count: "exact", head: true })
       .eq("group_id", id),
   ]);
-  if (messagesError || sessionsError || resourcesError || ownResourcesError || membersError || memberCountError) {
+  if (messagesError || sessionsError || resourcesError || ownResourcesError || ownNotesError || membersError || memberCountError) {
     console.error("Study group detail load failed", {
       messagesCode: messagesError?.code,
       sessionsCode: sessionsError?.code,
       resourcesCode: resourcesError?.code,
       ownResourcesCode: ownResourcesError?.code,
+      ownNotesCode: ownNotesError?.code,
       membersCode: membersError?.code,
       memberCountCode: memberCountError?.code,
     });
     return fail("Group discussions and details could not be loaded.", 500);
   }
+  const memberIds = (members ?? []).map((member) => member.user_id);
+  const { data: profiles } = memberIds.length
+    ? await admin.from("profiles").select("id, full_name, avatar_url").in("id", memberIds)
+    : { data: [] };
+  const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
   const orderedMessages = messages ?? [];
   const hasMoreMessages = orderedMessages.length > 50;
   const pageMessages = orderedMessages.slice(0, 50).reverse();
@@ -143,6 +154,7 @@ export async function GET(request: Request, context: RouteContext) {
       body: message.body,
       created_at: message.created_at,
       isMine: message.sender_id === auth.user.id,
+      senderName: profileById.get(message.sender_id)?.full_name ?? (message.sender_id === auth.user.id ? "You" : "Group member"),
     })),
     hasMoreMessages,
     nextMessageCursor: hasMoreMessages ? pageMessages[0]?.created_at ?? null : null,
@@ -154,10 +166,15 @@ export async function GET(request: Request, context: RouteContext) {
       createdAt: created_at,
       isMine: owner_id === auth.user.id,
     })),
-    ownResources: ownResources ?? [],
+    ownResources: [
+      ...(ownResources ?? []).map((resource) => ({ ...resource, source: "resource" })),
+      ...(ownNotes ?? []).map((note) => ({ id: `note:${note.id}`, title: note.title, resource_type: "Generated notes", source: "note" })),
+    ],
     callEnabled: Boolean(getJitsiDomain()),
     members: (members ?? []).map((member) => ({
       userId: member.user_id,
+      name: profileById.get(member.user_id)?.full_name ?? "StudyStation member",
+      avatarUrl: profileById.get(member.user_id)?.avatar_url ?? null,
       role: member.role,
       joinedAt: member.joined_at,
       isSelf: member.user_id === auth.user.id,
@@ -284,6 +301,25 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (!role) return fail("Join the group before using its discussions or shared resources.", 403);
 
+  if (action === "start_call") {
+    if (!getJitsiDomain()) return fail("Study calls are not configured. Set JITSI_MEET_DOMAIN on the server.", 503);
+    const startsAt = new Date();
+    const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+    const { data, error } = await admin.from("study_sessions")
+      .insert({
+        group_id: id,
+        creator_id: auth.user.id,
+        title: "Instant group call",
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: "scheduled",
+      })
+      .select("id, title, starts_at, ends_at, status, notes")
+      .single();
+    if (error || !data) return fail("The group call could not be started. Check that the Stage 10 migration is applied.", 503);
+    return NextResponse.json({ session: data }, { status: 201 });
+  }
+
   if (action === "message") {
     const message = typeof body.text === "string" ? body.text.trim() : "";
     if (message.length < 1 || message.length > 2000) return fail("Messages must be between 1 and 2,000 characters.");
@@ -359,6 +395,27 @@ export async function POST(request: Request, context: RouteContext) {
     if (error) return fail("The resource could not be shared. Confirm it is yours and try again.", 403);
     if (!data) return fail("That resource is not available in your account.", 404);
     return NextResponse.json({ resource: data });
+  }
+
+  if (action === "share_note") {
+    if (typeof body.resourceId !== "string" || !uuidPattern.test(body.resourceId)) return fail("Choose a valid generated note.");
+    const { data: note, error: noteError } = await auth.supabase.from("notes")
+      .select("id, lecture_id, title, summary, content")
+      .eq("id", body.resourceId)
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    if (noteError) return fail("The generated note could not be loaded.", 500);
+    if (!note) return fail("That generated note is not available in your account.", 404);
+    const { data, error } = await auth.supabase.from("resources").insert({
+      owner_id: auth.user.id,
+      shared_group_id: id,
+      title: note.title,
+      resource_type: "generated_notes",
+      content: { summary: note.summary, content: note.content, lectureId: note.lecture_id },
+      visibility: "group",
+    }).select("id, title, resource_type, created_at, owner_id").single();
+    if (error || !data) return fail("The generated note could not be shared.", 500);
+    return NextResponse.json({ resource: data }, { status: 201 });
   }
 
   if (action === "unshare_resource") {

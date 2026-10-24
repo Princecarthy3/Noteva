@@ -824,6 +824,7 @@ export function AppShell({
               search={search}
               selectedCourseId={selectedCourseId}
               onOpenCourse={setSelectedCourseId}
+            onOpenLecture={openNote}
               onCapture={() => {
                 setModal("capture");
                 setSourceTab("upload");
@@ -1477,7 +1478,7 @@ function FunctionalNoteModal({
                 </div>
                 {lecture.mediaUrl && (
                   <a
-                    href={lecture.mediaUrl}
+                    href={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
                     target="_blank"
                     rel="noreferrer"
                     download
@@ -1554,11 +1555,7 @@ function FunctionalNoteModal({
               /* Raw transcript tab */
               lecture.sourceType === "document" ? (
                 <div className="overflow-hidden rounded-2xl border border-[#e4ddfa] bg-[#faf8ff]">
-                  {lecture.mediaUrl ? (
-                    <iframe title={`Original file: ${lecture.title}`} src={lecture.mediaUrl} className="h-[min(65vh,700px)] w-full bg-white" />
-                  ) : (
-                    <p className="p-6 text-xs text-[#7e778b]">The original file preview is unavailable.</p>
-                  )}
+                  <iframe title={`Original file: ${lecture.title}`} src={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`} className="h-[min(65vh,700px)] w-full bg-white" />
                 </div>
               ) : lecture.transcript ? (
                 <div className="rounded-2xl bg-[#f7f5ff] p-5 border border-[#e4ddfa]">
