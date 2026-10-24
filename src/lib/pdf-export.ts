@@ -40,7 +40,7 @@ export function exportNoteToPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(114, 89, 232);
-  doc.text("NOTEVA · AI STUDY COMPANION", marginLeft, y);
+  doc.text("StudyStation · AI STUDY COMPANION", marginLeft, y);
   y += 5;
 
   doc.setFont("helvetica", "bold");

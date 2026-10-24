@@ -1,1129 +1,214 @@
-"use client";
-
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import {
-  Archive,
-  ArrowRight,
-  BookOpen,
-  CalendarDays,
-  Check,
-  Clipboard,
-  Clock3,
-  Download,
-  FileDown,
-  FileText,
-  Layers3,
-  LoaderCircle,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Sparkles,
-  Trash2,
-  Upload,
-  UsersRound,
-  X,
-} from "lucide-react";
-import type { ReactNode } from "react";
-import { AudioPlayer } from "@/components/audio-player";
-import { exportNoteToPdf } from "@/lib/pdf-export";
-import {
-  createStudyTask,
-  removeCourse,
-  saveCourse,
-  setCourseArchived,
-  type Stage6ActionResult,
-} from "@/app/app/stage6-actions";
-import type { PlannerData } from "@/components/study-planner";
-
-export type Stage6Course = {
-  id: string;
-  title: string;
-  code: string;
-  color: string;
-  term: string | null;
-  archived: boolean;
-};
-
-export type Stage6Task = {
-  id: string;
-  title: string;
-  dueAt: string | null;
-  status: string;
-  courseId: string | null;
-};
-
-export type Stage6Event = {
-  id: string;
-  title: string;
-  type: string;
-  location: string | null;
-  startsAt: string;
-  endsAt: string;
-  courseId: string | null;
-};
-
-export type OrganizedKeyTerm = {
-  term: string;
-  definition: string;
-};
-
-export type OrganizedNoteSection = {
-  heading: string;
-  body: string;
-  bullets?: string[];
-  takeaways?: string[];
-};
-
-export type OrganizedStudyQuestion = {
-  question: string;
-  answer?: string;
-};
-
-export type OrganizedNoteContent = {
-  title: string;
-  summary: string;
-  keyTerms?: OrganizedKeyTerm[];
-  sections?: OrganizedNoteSection[];
-  takeaways?: string[];
-  studyQuestions?: OrganizedStudyQuestion[];
-  actionChecklist?: string[];
-};
-
-export type OrganizedNoteData = {
-  id?: string;
-  title: string;
-  summary: string;
-  content: OrganizedNoteContent;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
-export type Stage6Lecture = {
-  id: string;
-  title: string;
-  status: string;
-  createdAt: string;
-  durationSeconds: number | null;
-  courseId: string | null;
-  transcript?: string | null;
-  note?: OrganizedNoteData | null;
-  sourceType?: string | null;
-  mediaUrl?: string | null;
-};
-
-export type Stage6DashboardData = {
-  courses: Stage6Course[];
-  tasks: Stage6Task[];
-  events: Stage6Event[];
-  lectures: Stage6Lecture[];
-  errors: {
-    courses: boolean;
-    tasks: boolean;
-    events: boolean;
-    lectures: boolean;
-  };
-  context: string[];
-  currentSemester: string | null;
-  timezone: string;
-};
-
-function displayDate(value: string, timezone: string, includeTime = false) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    ...(includeTime ? { hour: "numeric", minute: "2-digit" } : {}),
-    timeZone: timezone || "UTC",
-  }).format(date);
-}
-
-function dateStatus(value: string | null, timezone: string) {
-  if (!value) return "No deadline";
-  const due = new Date(value);
-  if (Number.isNaN(due.getTime())) return "Date unavailable";
-  if (due.getTime() < Date.now()) return `Overdue Â· ${displayDate(value, timezone)}`;
-  return `Due ${displayDate(value, timezone)}`;
-}
-
-function SectionError({ children }: { children: string }) {
-  return <p role="status" className="rounded-xl bg-[#fff1ef] px-3 py-2.5 text-xs leading-5 text-[#a44e48]">{children}</p>;
-}
-
-function EmptyState({ title, copy, action }: { title: string; copy: string; action?: ReactNode }) {
-  return <div className="rounded-2xl border border-dashed border-[#e3deeb] bg-[#fbfaff] px-4 py-7 text-center">
-    <p className="text-sm font-extrabold text-[#373145]">{title}</p>
-    <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-[#8a8494]">{copy}</p>
-    {action && <div className="mt-4">{action}</div>}
-  </div>;
-}
-
-function QuickAction({ icon: Icon, title, copy, onClick, disabled = false }: {
-  icon: typeof Upload;
-  title: string;
-  copy: string;
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
-  const content = <><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f0edff] text-[#7259e8]"><Icon className="size-4" /></span><span className="min-w-0 text-left"><span className="block text-xs font-extrabold">{title}</span><span className="mt-0.5 block text-[10px] leading-4 text-[#8a8494]">{copy}</span></span>{disabled && <span className="ml-auto shrink-0 rounded-full bg-[#f1eff5] px-2 py-1 text-[8px] font-black uppercase tracking-wide text-[#85808d]">Later</span>}</>;
-  const className = `flex min-h-[72px] items-center gap-3 rounded-2xl border border-[#e9e5ef] bg-white p-3 text-left transition ${disabled ? "cursor-not-allowed opacity-75" : "hover:-translate-y-0.5 hover:border-[#cfc5f3] hover:shadow-[0_10px_25px_rgba(39,29,74,.07)]"}`;
-  return disabled ? <div aria-disabled="true" className={className}>{content}</div> : <button type="button" onClick={onClick} className={className}>{content}</button>;
-}
-
-export function Stage6Dashboard({
-  data,
-  plannerData,
-  fullName,
-  onCapture,
-  onAssistant,
-  onGroups,
-  onOpenCourse,
-  onOpenCourses,
-  onOpenLectures,
-  onOpenPlanner,
-}: {
-  data: Stage6DashboardData;
-  plannerData: PlannerData;
-  fullName: string;
-  onCapture: () => void;
-  onAssistant: () => void;
-  onGroups: () => void;
-  onOpenCourse: (id: string) => void;
-  onOpenCourses: () => void;
-  onOpenLectures: () => void;
-  onOpenPlanner: () => void;
-}) {
-  const router = useRouter();
-  const [taskDialog, setTaskDialog] = useState(false);
-  const [message, setMessage] = useState("");
-  const [pending, startTransition] = useTransition();
-  const firstName = fullName.trim().split(/\s+/)[0] || "Student";
-  const activeCourses = useMemo(() => data.courses.filter((course) =>
-    !course.archived && (!data.currentSemester || !course.term || course.term === data.currentSemester)), [data.courses, data.currentSemester]);
-  const courseNames = useMemo(() => new Map(data.courses.map((course) => [course.id, `${course.code} Â· ${course.title}`])), [data.courses]);
-  const calendarItems = [
-    ...data.events
-      .map((event) => ({
-        id: `event-${event.id}`,
-        title: event.title,
-        startsAt: event.startsAt,
-        detail: event.location || (event.type === "review" ? "Review block" : event.type === "exam" ? "Exam" : event.type === "lab" ? "Lab" : event.type === "lecture" ? "Class lecture" : "Study block"),
-      })),
-    ...plannerData.groupSessions.map((session) => ({
-      id: `group-${session.id}`,
-      title: session.title,
-      startsAt: session.startsAt,
-      detail: `Study group Â· ${session.groupName}`,
-    })),
-  ].sort((first, second) => Date.parse(first.startsAt) - Date.parse(second.startsAt)).slice(0, 5);
-  const progressCards = [
-    { label: "Tasks completed", value: plannerData.progress.completedTasks, detail: "Saved tasks marked complete" },
-    { label: "Lectures processed", value: plannerData.progress.processedLectures, detail: "Ready transcripts in your library" },
-    {
-      label: "Quiz attempts",
-      value: plannerData.progress.quizAttempts,
-      detail: plannerData.progress.recentQuizAverage === null
-        ? "No scored attempts yet"
-        : `${plannerData.progress.recentQuizAverage}% average Â· latest 10`,
-    },
-  ];
-
-  function submitTask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    startTransition(async () => {
-      const result = await createStudyTask(new FormData(form));
-      setMessage(result.error ?? result.success ?? "Task update completed.");
-      if (!result.error) {
-        form.reset();
-        setTaskDialog(false);
-        router.refresh();
-      }
-    });
-  }
-
-  return <div className="fade-up space-y-5">
-    <section className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">Your study space</p>
-        <h1 className="mt-1 text-[25px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[29px]">Welcome back, {firstName}</h1>
-        <p className="mt-1.5 text-[12px] leading-5 text-[#7d7789]">{data.context.length ? data.context.join(" Â· ") : "Your courses, study tasks, and lectures in one place."}</p>
-      </div>
-      <button type="button" onClick={() => setTaskDialog(true)} className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl bg-[#7259e8] px-4 text-[11px] font-extrabold text-white transition hover:bg-[#8069ed] sm:self-auto"><Plus className="size-4" /> Add a task</button>
-    </section>
-
-    <section aria-label="Quick actions" className="grid gap-2 sm:grid-cols-3">
-      <QuickAction icon={Upload} title="Upload a lecture" copy="Turn class material into notes" onClick={onCapture} />
-      <QuickAction icon={Sparkles} title="Ask StudyStation" copy="Get help with your studies" onClick={onAssistant} />
-      <QuickAction icon={UsersRound} title="Study groups" copy="Find classmates and plan sessions" onClick={onGroups} />
-    </section>
-
-    {message && <p role="status" className="rounded-xl bg-[#f1efff] px-4 py-3 text-xs font-semibold text-[#5b47bd]">{message}</p>}
-
-    <section aria-label="Learning progress from saved records" className="rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-6">
-      <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#9a94a3]">Your learning overview</p><h2 className="mt-1 text-[16px] font-extrabold">Progress at a glance</h2></div>
-        <button type="button" onClick={onOpenPlanner} className="inline-flex h-9 items-center justify-center gap-2 self-start rounded-xl bg-[#f3f0ff] px-3 text-[10px] font-extrabold text-[#7259e8] transition hover:bg-[#ebe6ff] sm:self-auto"><CalendarDays className="size-3.5" /> Open planner</button>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        {progressCards.map((item) => <article key={item.label} className="rounded-2xl border border-[#f0edf4] bg-[#fbfaff] p-3.5">
-          <p className="text-[9px] font-black uppercase tracking-[.1em] text-[#908a98]">{item.label}</p>
-          {plannerData.errors.progress
-            ? <p className="mt-2 text-xs font-bold text-[#a44e48]">Could not load</p>
-            : <><p className="mt-1.5 text-[22px] font-black tracking-tight text-[#17132d]">{item.value}</p><p className="mt-0.5 text-[9px] text-[#8a8494]">{item.detail}</p></>}
-        </article>)}
-      </div>
-    </section>
-
-    <section className="grid gap-5 xl:grid-cols-2">
-      <div className="rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#9a94a3]">Your next steps</p><h2 className="mt-1 text-[16px] font-extrabold">Upcoming tasks</h2></div><button type="button" onClick={() => setTaskDialog(true)} className="text-[10px] font-extrabold text-[#7259e8]">Add task</button></div>
-        {data.errors.tasks ? <SectionError>Tasks could not be loaded. Check that the Stage 4 migration is applied, then refresh.</SectionError> : data.tasks.length ? <ul className="divide-y divide-[#f0edf4]">{data.tasks.slice(0, 5).map((task) => <li key={task.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-[#f3f0ff] text-[#7259e8]"><Check className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{task.title}</p><p className="mt-1 text-[10px] text-[#85808d]">{task.courseId ? courseNames.get(task.courseId) ?? "Course" : "Personal task"} Â· {dateStatus(task.dueAt, data.timezone)}</p></div></li>)}</ul> : <EmptyState title="Nothing due yet" copy="Add a study task or deadline and it will appear here." action={<button type="button" onClick={() => setTaskDialog(true)} className="text-xs font-extrabold text-[#7259e8]">Create your first task</button>} />}
-      </div>
-
-      <div className="rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="grid size-8 place-items-center rounded-xl bg-[#e6f7ef] text-[#2f946f]"><CalendarDays className="size-4" /></span><div><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#9a94a3]">On your calendar</p><h2 className="mt-1 text-[16px] font-extrabold">Next up</h2></div></div><button type="button" onClick={onOpenPlanner} className="text-[10px] font-extrabold text-[#7259e8]">View planner</button></div>
-        {data.errors.events || plannerData.errors.groupSessions
-          ? <SectionError>Some calendar items could not be loaded. Open the planner or refresh to try again.</SectionError>
-          : calendarItems.length
-            ? <ul className="divide-y divide-[#f0edf4]">{calendarItems.map((item) => <li key={item.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-[#e6f7ef] text-[#2f946f]"><Clock3 className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{item.title}</p><p className="mt-1 text-[10px] text-[#85808d]">{displayDate(item.startsAt, data.timezone, true)} Â· {item.detail}</p></div></li>)}</ul>
-            : <EmptyState title="Nothing scheduled yet" copy="Your study blocks, review time, and group sessions will appear here." />}
-      </div>
-    </section>
-
-    <section className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-      <div className="rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#9a94a3]">Your semester</p><h2 className="mt-1 text-[16px] font-extrabold">Active courses</h2></div><button type="button" onClick={onOpenCourses} className="text-[10px] font-extrabold text-[#7259e8]">View all</button></div>
-        {data.errors.courses ? <SectionError>Your courses could not be loaded. Refresh to try again.</SectionError> : activeCourses.length ? <div className="space-y-2">{activeCourses.slice(0, 4).map((course) => <button type="button" key={course.id} onClick={() => onOpenCourse(course.id)} className="flex w-full items-center gap-3 rounded-xl border border-[#f0edf4] p-3 text-left transition hover:border-[#cfc5f3] hover:bg-[#fbfaff]"><span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: course.color }} /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-extrabold">{course.title}</span><span className="mt-0.5 block truncate text-[10px] text-[#85808d]">{course.code}{course.term ? ` Â· ${course.term}` : ""}</span></span><ArrowRight className="size-3.5 shrink-0 text-[#9993a0]" /></button>)}</div> : <EmptyState title="Your course list is empty" copy="Add your first course to keep its study work organized." action={<button type="button" onClick={onOpenCourses} className="text-xs font-extrabold text-[#7259e8]">Add your first course</button>} />}
-      </div>
-
-      <div className="rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#9a94a3]">Pick up where you left off</p><h2 className="mt-1 text-[16px] font-extrabold">Recent lectures</h2></div><button type="button" onClick={onOpenLectures} className="text-[10px] font-extrabold text-[#7259e8]">View all</button></div>
-        {data.errors.lectures ? <SectionError>Your recent lectures could not be loaded. Refresh to try again.</SectionError> : data.lectures.length ? <div className="space-y-2">{data.lectures.slice(0, 4).map((lecture) => <button key={lecture.id} type="button" onClick={onOpenLectures} className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-[#f0edf4] p-3 text-left transition hover:border-[#cfc5f3] hover:bg-[#fbfaff]"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f3f0ff] text-[#7259e8]"><FileText className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-extrabold">{lecture.title}</span><span className="mt-1 block truncate text-[10px] text-[#85808d]">{lecture.courseId ? courseNames.get(lecture.courseId) ?? "Course" : "Unassigned lecture"} Â· {lecture.status} Â· {displayDate(lecture.createdAt, data.timezone)}</span></span><ArrowRight className="size-3.5 shrink-0 text-[#9993a0]" /></button>)}</div> : <EmptyState title="No lectures yet" copy="Imported recordings and materials will appear here." action={<button type="button" onClick={onCapture} className="text-xs font-extrabold text-[#7259e8]">Upload your first lecture</button>} />}
-      </div>
-    </section>
-
-    {taskDialog && <div className="fixed inset-0 z-[90] grid place-items-center bg-[#17132d]/45 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-labelledby="task-dialog-title" className="w-full max-w-[440px] rounded-[24px] bg-white p-5 shadow-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">Stay on track</p><h2 id="task-dialog-title" className="mt-1 text-xl font-black">Add a study task</h2></div><button type="button" aria-label="Close" onClick={() => setTaskDialog(false)} className="grid size-8 place-items-center rounded-lg bg-[#f4f2f7]"><X className="size-4" /></button></div><form onSubmit={submitTask} className="mt-5 space-y-3"><label className="block text-xs font-bold">Task title<input name="title" required minLength={2} maxLength={160} className="mt-1.5 h-10 w-full rounded-xl border border-[#e5e1eb] px-3 text-sm outline-none focus:border-[#a99aed]" placeholder="e.g. Review lecture notes" /></label><label className="block text-xs font-bold">Course (optional)<select name="courseId" defaultValue="" className="mt-1.5 h-10 w-full rounded-xl border border-[#e5e1eb] bg-white px-3 text-sm outline-none focus:border-[#a99aed]"><option value="">Personal task</option>{activeCourses.map((course) => <option key={course.id} value={course.id}>{course.code} Â· {course.title}</option>)}</select></label><label className="block text-xs font-bold">Deadline (optional)<input name="dueAt" type="datetime-local" className="mt-1.5 h-10 w-full rounded-xl border border-[#e5e1eb] px-3 text-sm outline-none focus:border-[#a99aed]" /></label><input type="hidden" name="timezone" value={data.timezone} />{message && <p role="status" className="text-xs font-semibold text-[#a44e48]">{message}</p>}<div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setTaskDialog(false)} className="h-10 rounded-xl px-4 text-xs font-bold text-[#777180]">Cancel</button><button type="submit" disabled={pending} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white disabled:opacity-60">{pending && <LoaderCircle className="size-3.5 animate-spin" />}Add task</button></div></form></section></div>}
-  </div>;
-}
-
-export function Stage6Courses({
-  data,
-  search,
-  selectedCourseId,
-  onOpenCourse,
-  onCapture,
-}: {
-  data: Stage6DashboardData;
-  search: string;
-  selectedCourseId: string | null;
-  onOpenCourse: (id: string | null) => void;
-  onCapture: () => void;
-}) {
-  const router = useRouter();
-  const [showArchived, setShowArchived] = useState(false);
-  const terms = useMemo(() => [...new Set(data.courses.map((course) => course.term).filter((term): term is string => Boolean(term)))].sort(), [data.courses]);
-  const currentTerm = data.currentSemester && terms.includes(data.currentSemester) ? data.currentSemester : "all";
-  const [selectedTerm, setSelectedTerm] = useState(currentTerm);
-  const [editing, setEditing] = useState<Stage6Course | null | undefined>(undefined);
-  const [message, setMessage] = useState("");
-  const [pending, startTransition] = useTransition();
-  const listedCourses = useMemo(() => data.courses
-    .filter((course) => course.archived === showArchived)
-    .filter((course) => selectedTerm === "all" || !course.term || course.term === selectedTerm)
-    .filter((course) => `${course.code} ${course.title} ${course.term ?? ""}`.toLowerCase().includes(search.toLowerCase())), [data.courses, search, selectedTerm, showArchived]);
-  const selectedCourse = data.courses.find((course) => course.id === selectedCourseId) ?? null;
-  const courseLectures = selectedCourse ? data.lectures.filter((lecture) => lecture.courseId === selectedCourse.id) : [];
-
-  function runAction(action: () => Promise<Stage6ActionResult>, successCallback?: () => void) {
-    startTransition(async () => {
-      const result = await action();
-      setMessage(result.error ?? result.success ?? "Update completed.");
-      if (!result.error) {
-        successCallback?.();
-        router.refresh();
-      }
-    });
-  }
-
-  function submitCourse(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    runAction(() => saveCourse(new FormData(form)), () => setEditing(undefined));
-  }
-
-  const selectedTab = selectedCourse ? <CourseDetail course={selectedCourse} lectures={courseLectures} lectureError={data.errors.lectures} timezone={data.timezone} onBack={() => onOpenCourse(null)} onCapture={onCapture} /> : null;
-
-  return <div className="fade-up">
-    {selectedTab ? selectedTab : <>
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div><p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">Your semester</p><h1 className="mt-1 text-[25px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[29px]">{showArchived ? "Archived courses" : "My courses"}</h1><p className="mt-1.5 text-[12px] leading-5 text-[#7d7789]">Keep your lectures and study work organized by course.</p></div>
-        <div className="flex flex-wrap items-center gap-2"><label className="sr-only" htmlFor="course-term-filter">Filter courses by term</label><select id="course-term-filter" value={selectedTerm} onChange={(event) => setSelectedTerm(event.target.value)} className="h-10 max-w-[180px] rounded-xl border border-[#e5e1eb] bg-white px-3 text-[10px] font-extrabold text-[#625b6d]"><option value="all">All terms</option>{terms.map((term) => <option key={term} value={term}>{term}</option>)}</select><button type="button" onClick={() => {setShowArchived((value) => !value); setSelectedTerm(showArchived ? currentTerm : "all"); setMessage("");}} className="h-10 rounded-xl border border-[#e5e1eb] bg-white px-3 text-[10px] font-extrabold text-[#625b6d]">{showArchived ? "View active courses" : "View archived"}</button>{!showArchived && <button type="button" onClick={() => setEditing(null)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-[10px] font-extrabold text-white"><Plus className="size-4" /> Add course</button>}</div>
-      </div>
-      {message && <p role="status" className={`mt-4 rounded-xl px-4 py-3 text-xs font-semibold ${message.includes("couldnâ€™t") || message.includes("no longer") || message.includes("could not") ? "bg-[#fff1ef] text-[#a44e48]" : "bg-[#f1efff] text-[#5b47bd]"}`}>{message}</p>}
-      <div className="mt-5">
-        {data.errors.courses ? <SectionError>Courses could not be loaded. Check that the Stage 4 migration is applied, then refresh.</SectionError> : listedCourses.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{listedCourses.map((course) => <article key={course.id} className="rounded-[22px] border border-[#e9e5ef] bg-white p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><span className="grid size-10 place-items-center rounded-2xl text-sm font-black" style={{ color: course.color, backgroundColor: `${course.color}18` }}><BookOpen className="size-5" /></span><div className="flex items-center gap-1"><button type="button" aria-label={`Edit ${course.title}`} onClick={() => setEditing(course)} className="grid size-8 place-items-center rounded-lg text-[#85808d] hover:bg-[#f3f0ff] hover:text-[#7259e8]"><Pencil className="size-3.5" /></button><button type="button" aria-label={showArchived ? `Restore ${course.title}` : `Archive ${course.title}`} onClick={() => runAction(() => setCourseArchived(course.id, !showArchived))} className="grid size-8 place-items-center rounded-lg text-[#85808d] hover:bg-[#f3f0ff] hover:text-[#7259e8]"><Archive className="size-3.5" /></button><button type="button" aria-label={`Remove ${course.title}`} onClick={() => { if (window.confirm(`Remove ${course.code} from your course list? Its lectures will remain in your account.`)) runAction(() => removeCourse(course.id)); }} className="grid size-8 place-items-center rounded-lg text-[#85808d] hover:bg-[#fff1ef] hover:text-[#a44e48]"><Trash2 className="size-3.5" /></button></div></div><p className="mt-4 text-[10px] font-black uppercase tracking-[.1em] text-[#85808d]">{course.code}{course.term ? ` Â· ${course.term}` : ""}</p><h2 className="mt-1 truncate text-base font-extrabold">{course.title}</h2><button type="button" onClick={() => onOpenCourse(course.id)} className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-extrabold text-[#7259e8]">Open course <ArrowRight className="size-3.5" /></button></article>)}</div> : search ? <EmptyState title={`No courses match â€œ${search}â€`} copy="Try a different code, title, or term." /> : showArchived ? <EmptyState title="No archived courses" copy="Courses you archive will be listed here, ready to restore later." /> : <EmptyState title="Your course list is empty" copy="Add your first course to organize lectures, tasks, and study work." action={<button type="button" onClick={() => setEditing(null)} className="inline-flex items-center gap-2 rounded-xl bg-[#7259e8] px-4 py-2.5 text-xs font-extrabold text-white"><Plus className="size-4" /> Add your first course</button>} />}
-      </div>
-    </>}
-
-    {editing !== undefined && <div className="fixed inset-0 z-[90] grid place-items-center bg-[#17132d]/45 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-labelledby="course-dialog-title" className="w-full max-w-[440px] rounded-[24px] bg-white p-5 shadow-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">{editing ? "Course details" : "Build your course list"}</p><h2 id="course-dialog-title" className="mt-1 text-xl font-black">{editing ? "Edit course" : "Add a course"}</h2></div><button type="button" aria-label="Close" onClick={() => setEditing(undefined)} className="grid size-8 place-items-center rounded-lg bg-[#f4f2f7]"><X className="size-4" /></button></div><form onSubmit={submitCourse} className="mt-5 space-y-3"><input type="hidden" name="id" value={editing?.id ?? ""} /><label className="block text-xs font-bold">Course code<input name="code" required maxLength={30} defaultValue={editing?.code ?? ""} className="mt-1.5 h-10 w-full rounded-xl border border-[#e5e1eb] px-3 text-sm outline-none focus:border-[#a99aed]" placeholder="e.g. BIO 202" /></label><label className="block text-xs font-bold">Course title<input name="title" required minLength={2} maxLength={120} defaultValue={editing?.title ?? ""} className="mt-1.5 h-10 w-full rounded-xl border border-[#e5e1eb] px-3 text-sm outline-none focus:border-[#a99aed]" placeholder="e.g. Cell Biology" /></label><label className="block text-xs font-bold">Term or semester (optional)<input name="term" maxLength={80} defaultValue={editing?.term ?? ""} className="mt-1.5 h-10 w-full rounded-xl border border-[#e5e1eb] px-3 text-sm outline-none focus:border-[#a99aed]" placeholder="e.g. Fall 2026" /></label><label className="block text-xs font-bold">Course color<input name="color" type="color" defaultValue={editing?.color ?? "#7259e8"} className="mt-1.5 h-10 w-full rounded-xl border border-[#e5e1eb] bg-white px-2" /></label>{message && <p role="status" className="text-xs font-semibold text-[#a44e48]">{message}</p>}<div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setEditing(undefined)} className="h-10 rounded-xl px-4 text-xs font-bold text-[#777180]">Cancel</button><button type="submit" disabled={pending} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white disabled:opacity-60">{pending && <LoaderCircle className="size-3.5 animate-spin" />}{editing ? "Save changes" : "Add course"}</button></div></form></section></div>}
-  </div>;
-}
-
-type LectureDetail = Stage6Lecture & {
-  sourceType: string;
-  mimeType: string | null;
-  transcript: string | null;
-  processingError: string | null;
-  updatedAt: string;
-  mediaUrl?: string | null;
-  note?: OrganizedNoteData | null;
-};
-
-export function formatNoteMarkdown(note: OrganizedNoteData, lectureTitle: string, courseName?: string) {
-  let md = `# ${note.title || lectureTitle}\n\n`;
-  if (courseName) md += `**Course**: ${courseName}\n\n`;
-  md += `## Executive Summary\n${note.summary}\n\n`;
-
-  const terms = note.content?.keyTerms ?? [];
-  if (terms.length > 0) {
-    md += `## Key Concepts & Vocabulary\n`;
-    for (const t of terms) {
-      md += `- **${t.term}**: ${t.definition}\n`;
-    }
-    md += `\n`;
-  }
-
-  const sections = note.content?.sections ?? [];
-  if (sections.length > 0) {
-    md += `## Lecture Breakdown\n`;
-    for (const sec of sections) {
-      md += `### ${sec.heading}\n${sec.body}\n\n`;
-      if (sec.bullets && sec.bullets.length > 0) {
-        for (const b of sec.bullets) md += `- ${b}\n`;
-        md += `\n`;
-      }
-      if (sec.takeaways && sec.takeaways.length > 0) {
-        md += `> **Key Takeaway**: ${sec.takeaways.join("; ")}\n\n`;
-      }
-    }
-  }
-
-  const takeaways = note.content?.takeaways ?? [];
-  if (takeaways.length > 0) {
-    md += `## High-Yield Exam Takeaways\n`;
-    for (const t of takeaways) md += `- ${t}\n`;
-    md += `\n`;
-  }
-
-  const questions = note.content?.studyQuestions ?? [];
-  if (questions.length > 0) {
-    md += `## Active Recall Questions\n`;
-    for (let i = 0; i < questions.length; i++) {
-      md += `**Q${i + 1}: ${questions[i].question}**\n`;
-      if (questions[i].answer) md += `*Answer*: ${questions[i].answer}\n\n`;
-    }
-  }
-
-  return md;
-}
-
-export function OrganizedNotesDisplay({ note }: { note: OrganizedNoteData }) {
-  const [revealedQuestions, setRevealedQuestions] = useState<Record<number, boolean>>({});
-  const [checkedActions, setCheckedActions] = useState<Record<number, boolean>>({});
-
-  const terms = note.content?.keyTerms ?? [];
-  const sections = note.content?.sections ?? [];
-  const takeaways = note.content?.takeaways ?? [];
-  const questions = note.content?.studyQuestions ?? [];
-  const checklist = note.content?.actionChecklist ?? [];
-
-  return (
-    <div className="mt-4 space-y-6">
-      {/* Executive Summary */}
-      <div className="rounded-2xl border border-[#e2daf8] bg-gradient-to-br from-[#faf8ff] via-[#f7f5ff] to-[#f2efff] p-5 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-[#7259e8] text-white">
-            <Sparkles className="size-3.5" />
-          </span>
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#7259e8]">Executive Summary</h3>
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-[#352e46]">{note.summary}</p>
-      </div>
-
-      {/* Key Concepts / Vocabulary */}
-      {terms.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="grid size-6 place-items-center rounded-lg bg-[#efe9fb] text-[#7259e8]">
-              <BookOpen className="size-3.5" />
-            </span>
-            <h4 className="text-xs font-black uppercase tracking-wider text-[#17132d]">Key Concepts & Vocabulary</h4>
-            <span className="rounded-full bg-[#f0edf7] px-2 py-0.5 text-[9px] font-bold text-[#767082]">{terms.length}</span>
-          </div>
-          <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-            {terms.map((item, idx) => (
-              <div key={idx} className="rounded-xl border border-[#eae5f2] bg-white p-3.5 transition hover:border-[#cfc3f5] hover:shadow-sm">
-                <p className="text-[11px] font-black text-[#7259e8]">{item.term}</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-[#564e65]">{item.definition}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Structured Sections */}
-      {sections.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="grid size-6 place-items-center rounded-lg bg-[#efe9fb] text-[#7259e8]">
-              <Layers3 className="size-3.5" />
-            </span>
-            <h4 className="text-xs font-black uppercase tracking-wider text-[#17132d]">Lecture Breakdown</h4>
-          </div>
-          {sections.map((section, idx) => (
-            <div key={idx} className="rounded-2xl border border-[#ebe7f2] bg-white p-5 shadow-sm">
-              <h5 className="text-[13px] font-black text-[#17132d]">{section.heading}</h5>
-              <p className="mt-2 text-xs leading-relaxed text-[#403950] whitespace-pre-line">{section.body}</p>
-              {section.bullets && section.bullets.length > 0 && (
-                <ul className="mt-3 space-y-1.5 border-l-2 border-[#7259e8]/30 pl-3">
-                  {section.bullets.map((bullet, bIdx) => (
-                    <li key={bIdx} className="text-[11px] leading-relaxed text-[#5a5367]">
-                      â€¢ {bullet}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {section.takeaways && section.takeaways.length > 0 && (
-                <div className="mt-3 rounded-xl bg-[#f5f3fc] px-3.5 py-2 text-[10px] text-[#634cc7]">
-                  <span className="font-extrabold uppercase tracking-wide">Key Insight: </span>
-                  {section.takeaways.join("; ")}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* High-Yield Exam Takeaways */}
-      {takeaways.length > 0 && (
-        <div className="rounded-2xl border border-[#cbe9d8] bg-[#f4fbf7] p-5">
-          <div className="flex items-center gap-2">
-            <span className="grid size-6 place-items-center rounded-lg bg-[#d4f2e1] text-[#22774d]">
-              <Check className="size-3.5" />
-            </span>
-            <h4 className="text-xs font-black uppercase tracking-wider text-[#1d6b43]">High-Yield Exam Takeaways</h4>
-          </div>
-          <ul className="mt-3 space-y-2">
-            {takeaways.map((takeaway, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-xs leading-relaxed text-[#2a5d40]">
-                <span className="mt-1 size-1.5 shrink-0 rounded-full bg-[#2da365]" />
-                <span>{takeaway}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Active Recall Questions */}
-      {questions.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="grid size-6 place-items-center rounded-lg bg-[#efe9fb] text-[#7259e8]">
-              <Clock3 className="size-3.5" />
-            </span>
-            <h4 className="text-xs font-black uppercase tracking-wider text-[#17132d]">Active Recall Questions</h4>
-            <span className="text-[10px] text-[#868093]">(Test yourself before reading the answer)</span>
-          </div>
-          <div className="space-y-2.5">
-            {questions.map((q, idx) => {
-              const isRevealed = Boolean(revealedQuestions[idx]);
-              return (
-                <div key={idx} className="rounded-xl border border-[#ebe7f2] bg-white p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-xs font-bold text-[#17132d]">
-                      <span className="font-black text-[#7259e8]">Q{idx + 1}. </span>
-                      {q.question}
-                    </p>
-                    {q.answer && (
-                      <button
-                        type="button"
-                        onClick={() => setRevealedQuestions((prev) => ({ ...prev, [idx]: !prev[idx] }))}
-                        className="shrink-0 rounded-lg bg-[#f4f1fa] px-2.5 py-1 text-[9px] font-extrabold text-[#7259e8] hover:bg-[#eae4f7]"
-                      >
-                        {isRevealed ? "Hide answer" : "Show answer"}
-                      </button>
-                    )}
-                  </div>
-                  {isRevealed && q.answer && (
-                    <div className="mt-3 rounded-lg border border-[#e5def7] bg-[#faf8ff] p-3 text-[11px] leading-relaxed text-[#4e4560]">
-                      <span className="font-black text-[#7259e8]">Answer: </span>
-                      {q.answer}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Study Action Checklist */}
-      {checklist.length > 0 && (
-        <div className="rounded-2xl border border-[#ebe7f2] bg-[#faf9fd] p-4.5">
-          <h4 className="text-xs font-black uppercase tracking-wider text-[#5f586d]">Next Revision Steps</h4>
-          <div className="mt-2.5 space-y-2">
-            {checklist.map((item, idx) => {
-              const isDone = Boolean(checkedActions[idx]);
-              return (
-                <label key={idx} className="flex cursor-pointer items-start gap-2 text-xs text-[#40384f]">
-                  <input
-                    type="checkbox"
-                    checked={isDone}
-                    onChange={() => setCheckedActions((prev) => ({ ...prev, [idx]: !prev[idx] }))}
-                    className="mt-0.5 accent-[#7259e8]"
-                  />
-                  <span className={isDone ? "line-through opacity-60" : ""}>{item}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function LectureStudio({
-  lectures,
-  courses,
-  timezone,
-  loadError,
-  autoOpenLectureId,
-  onAutoOpen,
-  onUpload,
-  onToast,
-}: {
-  lectures: Stage6Lecture[];
-  courses: Stage6Course[];
-  timezone: string;
-  loadError: boolean;
-  autoOpenLectureId: string | null;
-  onAutoOpen: () => void;
-  onUpload: () => void;
-  onToast?: (message: string, tone?: "success" | "error" | "info") => void;
-}) {
-  const router = useRouter();
-  const [selected, setSelected] = useState<LectureDetail | null>(null);
-  const [studioTab, setStudioTab] = useState<"notes" | "transcript">("notes");
-  const [transcriptDraft, setTranscriptDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [generatingNotes, setGeneratingNotes] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const courseNames = useMemo(() => new Map(courses.map((course) => [course.id, `${course.code} Â· ${course.title}`])), [courses]);
-
-  const fetchLectureDetail = useCallback(async (id: string) => {
-    const response = await fetch(`/api/lectures/${id}`);
-    const body = await response.json() as { lecture?: LectureDetail; error?: string };
-    if (!response.ok || !body.lecture) throw new Error(body.error || "Lecture could not be loaded.");
-    return body.lecture;
-  }, []);
-
-  const openLecture = useCallback(async (id: string) => {
-    if (selected?.id === id && !error && !busy) return;
-
-    const preview = lectures.find((lecture) => lecture.id === id);
-    // Optimistic selection so the right panel reacts immediately.
-    if (preview) {
-      setSelected({
-        id: preview.id,
-        title: preview.title,
-        status: preview.status,
-        createdAt: preview.createdAt,
-        durationSeconds: preview.durationSeconds,
-        courseId: preview.courseId,
-        transcript: preview.transcript ?? null,
-        note: preview.note ?? null,
-        sourceType: preview.sourceType ?? "recording",
-        mediaUrl: preview.mediaUrl ?? null,
-        mimeType: null,
-        processingError: null,
-        updatedAt: preview.createdAt,
-      } as LectureDetail);
-      setTranscriptDraft(preview.transcript ?? "");
-      setStudioTab(preview.note ? "notes" : "transcript");
-      setDirty(false);
-    }
-
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const lecture = await fetchLectureDetail(id);
-      setSelected(lecture);
-      setTranscriptDraft(lecture.transcript ?? "");
-      setStudioTab(lecture.note ? "notes" : "transcript");
-      setDirty(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Lecture could not be loaded.");
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, error, fetchLectureDetail, lectures, selected?.id]);
-
-  useEffect(() => {
-    if (!autoOpenLectureId || !lectures.some((lecture) => lecture.id === autoOpenLectureId)) return;
-    onAutoOpen();
-    void openLecture(autoOpenLectureId);
-  }, [autoOpenLectureId, lectures, onAutoOpen, openLecture]);
-
-  // Auto-open the most recent ready lecture once when the studio mounts with data.
-  const didAutoOpenRef = useRef(false);
-  useEffect(() => {
-    if (didAutoOpenRef.current || selected || busy || autoOpenLectureId || !lectures.length) return;
-    const firstReady = [...lectures]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .find((lecture) => lecture.status === "ready");
-    if (firstReady) {
-      didAutoOpenRef.current = true;
-      void openLecture(firstReady.id);
-    }
-  }, [autoOpenLectureId, busy, lectures, openLecture, selected]);
-
-  async function saveTranscript() {
-    if (!selected) return;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch(`/api/lectures/${selected.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: transcriptDraft }),
-      });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error || "Transcript could not be saved.");
-      setSelected({ ...selected, transcript: transcriptDraft });
-      setDirty(false);
-      setNotice("Transcript saved.");
-      onToast?.("Transcript saved.", "success");
-      router.refresh();
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "Transcript could not be saved.";
-      setError(message);
-      onToast?.(message, "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function generateNotes() {
-    if (!selected) return;
-    setGeneratingNotes(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch(`/api/lectures/${selected.id}/notes`, {
-        method: "POST",
-      });
-      const body = (await response.json()) as { note?: OrganizedNoteData; error?: string; message?: string };
-      if (!response.ok || !body.note) throw new Error(body.error || "Could not generate organized notes.");
-      setSelected({ ...selected, note: body.note });
-      setStudioTab("notes");
-      const successMessage = body.message || "Organized study notes generated successfully!";
-      setNotice(successMessage);
-      onToast?.(successMessage, "success");
-      router.refresh();
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "Note generation failed.";
-      setError(message);
-      onToast?.(message, "error");
-    } finally {
-      setGeneratingNotes(false);
-    }
-  }
-
-  async function retryLecture(id: string) {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch("/api/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lectureId: id }),
-      });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error || "Lecture processing could not start.");
-      await openLecture(id);
-      router.refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Lecture processing could not start.");
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function deleteLecture(lecture: Stage6Lecture) {
-    if (!window.confirm(`Delete "${lecture.title}" and its transcript? This also deletes its derived notes and study materials.`)) return;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch(`/api/lectures/${lecture.id}`, { method: "DELETE" });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error || "Lecture could not be deleted.");
-      if (selected?.id === lecture.id) {
-        setSelected(null);
-        setTranscriptDraft("");
-      }
-      setNotice("Lecture and associated study content deleted.");
-      onToast?.("Lecture deleted.", "success");
-      router.refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Lecture could not be deleted.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function copyTranscript() {
-    if (!selected?.transcript) return;
-    void navigator.clipboard.writeText(transcriptDraft).then(
-      () => {
-        setNotice("Transcript copied.");
-        onToast?.("Transcript copied.", "success");
-      },
-      () => {
-        setError("Clipboard access was unavailable. Select and copy the transcript manually.");
-        onToast?.("Clipboard access was unavailable.", "error");
-      },
-    );
-  }
-
-  function downloadTranscript() {
-    if (!selected) return;
-    const blob = new Blob([transcriptDraft], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${selected.title.replace(/[^\w.-]+/g, "-").slice(0, 80) || "lecture"}-transcript.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function copyNoteMarkdownAction() {
-    if (!selected?.note) return;
-    const courseName = selected.courseId ? courseNames.get(selected.courseId) : undefined;
-    const md = formatNoteMarkdown(selected.note, selected.title, courseName);
-    void navigator.clipboard.writeText(md).then(
-      () => {
-        setNotice("Organized study notes copied as Markdown!");
-        onToast?.("Notes copied as Markdown.", "success");
-      },
-      () => {
-        setError("Clipboard access unavailable.");
-        onToast?.("Clipboard access unavailable.", "error");
-      }
-    );
-  }
-
-  function exportNotePdfAction() {
-    if (!selected?.note) return;
-    const courseName = selected.courseId ? courseNames.get(selected.courseId) : undefined;
-    try {
-      exportNoteToPdf(selected.note, selected.title, courseName);
-      setNotice("Organized study guide PDF downloaded!");
-      onToast?.("Study guide PDF downloaded.", "success");
-      onToast?.("Study guide PDF downloaded.", "success");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate PDF.");
-    }
-  }
-
-  function downloadNoteMarkdownAction() {
-    if (!selected?.note) return;
-    const courseName = selected.courseId ? courseNames.get(selected.courseId) : undefined;
-    const md = formatNoteMarkdown(selected.note, selected.title, courseName);
-    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${selected.title.replace(/[^\w.-]+/g, "-").slice(0, 80) || "lecture"}-study-notes.md`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const sortedLectures = useMemo(() => [...lectures].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [lectures]);
-
-  return <div className="fade-up">
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-      <div><p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">Lecture Studio</p><h1 className="mt-1 text-[25px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[29px]">Your lecture library</h1><p className="mt-1.5 max-w-2xl text-[12px] leading-5 text-[#7d7789]">Upload authorized audio or video recordings, or lecture documents (PDF, Word, PPT, text). Content is parsed and organized into comprehensive study notes with AI.</p></div>
-      <button type="button" onClick={onUpload} className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl bg-[#7259e8] px-4 text-[11px] font-extrabold text-white sm:self-auto"><Upload className="size-4" /> Add a lecture</button>
-    </div>
-    <div className="mt-5 grid gap-5 xl:grid-cols-[.72fr_1.28fr]">
-      <section className="rounded-[24px] border border-[#e9e5ef] bg-white p-4 sm:p-5">
-        <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-extrabold">Recent lectures</h2><span className="text-[10px] text-[#8a8494]">{sortedLectures.length}</span></div>
-        {loadError ? <SectionError>Lecture history could not be loaded. Check the Stage 4 migration and refresh.</SectionError> : sortedLectures.length ? <ul className="space-y-2">{sortedLectures.map((lecture) => {
-            const isActive = selected?.id === lecture.id;
-            return (
-              <li key={lecture.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => void openLecture(lecture.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      void openLecture(lecture.id);
-                    }
-                  }}
-                  className={`flex cursor-pointer items-center gap-2 rounded-2xl border p-3 transition ${isActive ? "border-[#c8bcf2] bg-[#f8f6ff] shadow-sm" : "border-[#f0edf4] hover:border-[#d9d0f5] hover:bg-[#fbfaff]"}`}
-                >
-                  <div className="min-w-0 flex-1 text-left">
-                    <span className="block truncate text-xs font-extrabold">{lecture.title}</span>
-                    <span className="mt-1 block truncate text-[10px] text-[#85808d]">{lecture.courseId ? courseNames.get(lecture.courseId) ?? "Course" : "Unassigned"} Â· {displayDate(lecture.createdAt, timezone)}</span>
-                    {lecture.note && (
-                      <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-[#f3f0ff] px-1.5 py-0.5 text-[8px] font-extrabold text-[#7259e8]">
-                        <Sparkles className="size-2.5" /> Notes ready
-                      </span>
-                    )}
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase ${lecture.status === "ready" ? "bg-[#e5f7ed] text-[#2f946f]" : lecture.status === "failed" ? "bg-[#fff0ee] text-[#ae544d]" : "bg-[#fff4db] text-[#9b741f]"}`}>{lecture.status}</span>
-                  {lecture.status !== "ready" && lecture.status !== "processing" && (
-                    <button type="button" disabled={busy} aria-label={`Retry ${lecture.title}`} onClick={(event) => { event.stopPropagation(); void retryLecture(lecture.id); }} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#7259e8] hover:bg-[#f1edff] disabled:opacity-50">
-                      <RefreshCw className="size-3.5" />
-                    </button>
-                  )}
-                  <button type="button" disabled={busy || lecture.status === "processing"} aria-label={`Delete ${lecture.title}`} onClick={(event) => { event.stopPropagation(); void deleteLecture(lecture); }} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#85808d] hover:bg-[#fff1ef] hover:text-[#a44e48] disabled:opacity-50">
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              </li>
-            );
-          })}</ul> : <EmptyState title="No lectures yet" copy="Upload an authorized audio or video recording, or lecture document to create your first notes." action={<button type="button" onClick={onUpload} className="text-xs font-extrabold text-[#7259e8]">Upload a lecture</button>} />}
-      </section>
-
-      <section className="min-h-[420px] rounded-[24px] border border-[#e9e5ef] bg-white p-4 sm:p-6">
-        {!selected ? (
-          <div className="grid h-full min-h-[360px] place-items-center text-center">
-            <div>
-              <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#f0edff] text-[#7259e8]">
-                {busy ? <LoaderCircle className="size-5 animate-spin" /> : <FileText className="size-5" />}
-              </span>
-              <h2 className="mt-4 text-sm font-extrabold">{busy ? "Opening lectureâ€¦" : "Transcript & notes workspace"}</h2>
-              <p className="mt-1 max-w-sm text-xs leading-5 text-[#8a8494]">
-                {busy
-                  ? "Loading transcript and notes for the selected lecture."
-                  : "Choose a completed lecture to view its organized AI notes or raw transcript. Use AI to extract key concepts, study questions, and summaries."}
-              </p>
-              {error && <p role="alert" className="mx-auto mt-4 max-w-sm rounded-xl bg-[#fff1ef] px-3 py-2.5 text-xs text-[#a44e48]">{error}</p>}
-            </div>
-          </div>
-        ) : <>
-          <div className="flex flex-col justify-between gap-3 border-b border-[#eeeaf2] pb-4 sm:flex-row sm:items-start">
-            <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-[.12em] text-[#7259e8]">{selected.sourceType} Â· {selected.status}</p>
-              <h2 className="mt-1 truncate text-lg font-black">{selected.title}</h2>
-              <p className="mt-1 text-[10px] text-[#85808d]">{displayDate(selected.createdAt, timezone, true)}{selected.courseId ? ` Â· ${courseNames.get(selected.courseId) ?? "Course"}` : ""}</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {selected.status === "ready" && selected.transcript && (
-                <>
-                  {selected.note ? (
-                    <>
-                      <button type="button" onClick={exportNotePdfAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-[#f5f2ff] px-2.5 text-[9px] font-extrabold text-[#7259e8] hover:bg-[#ece7ff] shadow-sm"><FileDown className="size-3.5" /> Export PDF</button>
-                      <button type="button" onClick={copyNoteMarkdownAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[9px] font-bold hover:bg-[#faf9fd]"><Clipboard className="size-3.5" /> Copy Notes</button>
-                      <button type="button" onClick={downloadNoteMarkdownAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[9px] font-bold hover:bg-[#faf9fd]"><Download className="size-3.5" /> Download .md</button>
-                      <button type="button" disabled={generatingNotes} onClick={() => void generateNotes()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[9px] font-bold hover:bg-[#faf9fd] disabled:opacity-50">
-                        {generatingNotes ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Regenerate Notes
-                      </button>
-                    </>
-                  ) : (
-                    <button type="button" disabled={generatingNotes} onClick={() => void generateNotes()} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-3 text-[9px] font-black text-white shadow-sm hover:bg-[#6045de] disabled:opacity-50">
-                      {generatingNotes ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Generate AI Notes
-                    </button>
-                  )}
-                </>
-              )}
-              {selected.status !== "ready" && <button type="button" disabled={busy} onClick={() => void retryLecture(selected.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-2.5 text-[9px] font-extrabold text-white disabled:opacity-50"><RefreshCw className="size-3.5" /> Retry</button>}
-            </div>
-          </div>
-
-          {/* Media Audio / Video Player or Document Card */}
-          <div className="mt-4">
-            {selected.sourceType === "video" ? (
-              <div className="overflow-hidden rounded-2xl border border-[#e4ddfa] bg-black shadow-sm">
-                <video
-                  src={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
-                  controls
-                  className="max-h-[260px] w-full"
-                />
-              </div>
-            ) : selected.sourceType === "document" ? (
-              <div className="flex items-center gap-3 rounded-2xl border border-[#e4ddfa] bg-[#faf8ff] p-4">
-                <div className="grid size-10 place-items-center rounded-xl bg-[#ede8ff] text-[#7259e8]">
-                  <FileText className="size-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-[#1e1730]">Document Lecture Material</p>
-                  <p className="text-[10px] text-[#7e778b]">Extracted directly into study notes, flashcards, and quizzes</p>
-                </div>
-                {selected.mediaUrl && (
-                  <a
-                    href={selected.mediaUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    download
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-white px-2.5 text-[9px] font-bold text-[#7259e8] hover:bg-[#f5f2ff]"
-                  >
-                    <Download className="size-3.5" /> Download original
-                  </a>
-                )}
-              </div>
-            ) : (
-              <AudioPlayer
-                src={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
-                title={selected.title}
-                variant="card"
-                durationHintSeconds={selected.durationSeconds ?? undefined}
-              />
-            )}
-          </div>
-
-          {selected.status === "processing" && <p className="mt-4 rounded-xl bg-[#fff5df] px-3 py-2.5 text-xs text-[#8e6d25]">Transcription is in progress. Refresh this page in a moment to check its status.</p>}
-          {selected.status === "uploaded" && <p className="mt-4 rounded-xl bg-[#f2efff] px-3 py-2.5 text-xs text-[#5d4cb7]">Your upload is private and ready to process. Configure your server transcription key (GROQ_API_KEY) if processing is not set up yet.</p>}
-          {selected.status === "failed" && <p className="mt-4 rounded-xl bg-[#fff1ef] px-3 py-2.5 text-xs leading-5 text-[#a44e48]">{selected.processingError || "This lecture could not be processed. Your private media is retained; retry when the provider is available."}</p>}
-
-          {selected.status === "ready" && selected.transcript && (
-            <div className="mt-5">
-              {/* Studio Tabs Switcher */}
-              <div className="flex items-center justify-between border-b border-[#ece8f4] pb-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setStudioTab("notes")}
-                    className={`flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-black transition ${
-                      studioTab === "notes" ? "bg-[#7259e8] text-white shadow-sm" : "text-[#767082] hover:bg-[#f6f4fa]"
-                    }`}
-                  >
-                    <Sparkles className="size-3.5" /> Organized Notes
-                    {selected.note && <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[8px] font-extrabold">Ready</span>}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStudioTab("transcript")}
-                    className={`flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-black transition ${
-                      studioTab === "transcript" ? "bg-[#7259e8] text-white shadow-sm" : "text-[#767082] hover:bg-[#f6f4fa]"
-                    }`}
-                  >
-                    <FileText className="size-3.5" /> Raw Transcript
-                  </button>
-                </div>
-                {studioTab === "transcript" && (
-                  <div className="flex items-center gap-2">
-                    <button type="button" disabled={!selected.transcript || busy} onClick={copyTranscript} className="inline-flex h-7 items-center gap-1 rounded-md border border-[#e6e2eb] px-2 text-[9px] font-bold"><Clipboard className="size-3" /> Copy</button>
-                    <button type="button" disabled={!selected.transcript || busy} onClick={downloadTranscript} className="inline-flex h-7 items-center gap-1 rounded-md border border-[#e6e2eb] px-2 text-[9px] font-bold"><Download className="size-3" /> Download</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Tab 1: Organized Notes */}
-              {studioTab === "notes" && (
-                <div>
-                  {selected.note ? (
-                    <OrganizedNotesDisplay note={selected.note} />
-                  ) : (
-                    <div className="mt-5 rounded-2xl border border-dashed border-[#d8d0ee] bg-[#faf8ff] p-8 text-center">
-                      <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#eee7ff] text-[#7259e8]">
-                        <Sparkles className="size-6" />
-                      </div>
-                      <h3 className="mt-3 text-base font-black text-[#17132d]">Organize this lecture into notes</h3>
-                      <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-[#736c81]">
-                        Transform this raw lecture transcript into an executive summary, topic breakdown, key vocabulary glossary, and active-recall test questions.
-                      </p>
-                      <button
-                        type="button"
-                        disabled={generatingNotes}
-                        onClick={() => void generateNotes()}
-                        className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#7259e8] px-5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-[#6045de] disabled:opacity-60"
-                      >
-                        {generatingNotes ? (
-                          <>
-                            <LoaderCircle className="size-4 animate-spin" /> Organizing lecture notes with AIâ€¦
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="size-4" /> Generate Organized Notes with AI
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Tab 2: Raw Transcript */}
-              {studioTab === "transcript" && (
-                <>
-                  <div className="mt-4 flex items-center justify-between">
-                    <p className="text-[9px] font-black uppercase tracking-[.12em] text-[#8a8494]">Original transcript Â· editable</p>
-                    {dirty && <span className="text-[9px] font-bold text-[#a16b17]">Unsaved changes</span>}
-                  </div>
-                  <textarea
-                    aria-label="Lecture transcript"
-                    value={transcriptDraft}
-                    onChange={(event) => {
-                      setTranscriptDraft(event.target.value);
-                      setDirty(true);
-                    }}
-                    maxLength={500_000}
-                    className="mt-2 min-h-[310px] w-full resize-y rounded-2xl border border-[#e9e5ef] bg-[#fdfcff] p-4 text-xs leading-6 text-[#403b4b] outline-none focus:border-[#c9bdf1]"
-                  />
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <span className="text-[9px] text-[#8a8494]">{transcriptDraft.length.toLocaleString()} / 500,000 characters</span>
-                    <button
-                      type="button"
-                      disabled={!dirty || busy || !transcriptDraft.trim()}
-                      onClick={() => void saveTranscript()}
-                      className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#7259e8] px-3 text-[10px] font-extrabold text-white disabled:opacity-50"
-                    >
-                      {busy && <LoaderCircle className="size-3.5 animate-spin" />} Save transcript
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </>}
-        {error && <p role="alert" className="mt-3 rounded-xl bg-[#fff1ef] px-3 py-2.5 text-xs text-[#a44e48]">{error}</p>}
-        {notice && <p role="status" className="mt-3 rounded-xl bg-[#e8f7ef] px-3 py-2.5 text-xs text-[#2f946f]">{notice}</p>}
-      </section>
-    </div>
-    <p className="mt-4 text-[10px] leading-5 text-[#8a8494]">Only audio/video files you have permission to process are supported. Media is stored in your private account and sent to your configured transcription provider. External links, PDFs, and scanned documents are not supported yet.</p>
-  </div>;
-}
-
-function CourseDetail({ course, lectures, lectureError, timezone, onBack, onCapture }: {
-  course: Stage6Course;
-  lectures: Stage6Lecture[];
-  lectureError: boolean;
-  timezone: string;
-  onBack: () => void;
-  onCapture: () => void;
-}) {
-  const [tab, setTab] = useState<"overview" | "lectures">("overview");
-  return <div>
-    <button type="button" onClick={onBack} className="mb-4 text-xs font-extrabold text-[#7259e8]">â† All courses</button>
-    <div className="rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-7">
-      <div className="flex items-start gap-4"><span className="grid size-12 shrink-0 place-items-center rounded-2xl" style={{ color: course.color, backgroundColor: `${course.color}18` }}><BookOpen className="size-6" /></span><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.12em] text-[#85808d]">{course.code}{course.term ? ` Â· ${course.term}` : ""}</p><h1 className="mt-1 truncate text-2xl font-black tracking-[-.7px]">{course.title}</h1><p className="mt-1 text-xs text-[#85808d]">Your personal course workspace</p></div></div>
-      <div className="mt-6 flex gap-2 border-b border-[#eeeaf2]"><button type="button" onClick={() => setTab("overview")} className={`border-b-2 px-3 py-2 text-xs font-extrabold ${tab === "overview" ? "border-[#7259e8] text-[#7259e8]" : "border-transparent text-[#85808d]"}`}>Overview</button><button type="button" onClick={() => setTab("lectures")} className={`border-b-2 px-3 py-2 text-xs font-extrabold ${tab === "lectures" ? "border-[#7259e8] text-[#7259e8]" : "border-transparent text-[#85808d]"}`}>Lectures</button></div>
-      {tab === "overview" ? <div className="grid gap-3 py-5 sm:grid-cols-2"><div className="rounded-2xl bg-[#f8f6ff] p-4"><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#85808d]">Lectures</p><p className="mt-2 text-2xl font-black">{lectures.length}</p><p className="mt-1 text-[10px] text-[#85808d]">saved to this course</p></div><div className="rounded-2xl bg-[#f7fbf8] p-4"><p className="text-[9px] font-black uppercase tracking-[.12em] text-[#85808d]">Study resources</p><p className="mt-2 text-sm font-extrabold">Available in upcoming stages</p><p className="mt-1 text-[10px] leading-4 text-[#85808d]">Resources, flashcards, quizzes, course tasks, and groups will appear as those features are implemented.</p></div><div className="sm:col-span-2"><button type="button" onClick={onCapture} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white"><Plus className="size-4" /> Add a lecture</button></div></div> : <div className="py-5">{lectureError ? <SectionError>Course lectures could not be loaded. Refresh to try again.</SectionError> : lectures.length ? <ul className="divide-y divide-[#f0edf4]">{lectures.map((lecture) => <li key={lecture.id} className="flex items-center gap-3 py-3 first:pt-0"><span className="grid size-9 place-items-center rounded-xl bg-[#f3f0ff] text-[#7259e8]"><FileText className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{lecture.title}</p><p className="mt-1 text-[10px] text-[#85808d]">{lecture.status} Â· {displayDate(lecture.createdAt, timezone)}</p></div></li>)}</ul> : <EmptyState title="No lectures in this course yet" copy="Add a lecture to build a course-specific study space." action={<button type="button" onClick={onCapture} className="text-xs font-extrabold text-[#7259e8]">Upload a lecture</button>} />}</div>}
-      <div className="mt-2 border-t border-[#eeeaf2] pt-4"><p className="mb-3 text-[9px] font-black uppercase tracking-[.12em] text-[#9a94a3]">Planned workspace sections</p><div className="flex flex-wrap gap-2">{[[Layers3, "Flashcards"], [Sparkles, "Resources"], [Check, "Quizzes"], [CalendarDays, "Tasks"], [UsersRound, "Study groups"]].map(([Icon, label]) => <span key={label as string} className="inline-flex items-center gap-1.5 rounded-full bg-[#f4f2f7] px-3 py-1.5 text-[10px] font-bold text-[#85808d]"><Icon className="size-3" />{label as string} Â· later</span>)}</div></div>
-    </div>
-  </div>;
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛ5Ù:-jZ.¶›­–)Ş³R'W6R6Æ–VçB#°Ğ Ğ¦–×÷'B²W6T6ÆÆ&6²ÂW6TVffV7BÂW6TÖVÖòÂW6U&VbÂW6U7FFRÂW6UG&ç6—F–öâÂG—Rf÷&ÔWfVçBÒg&öÒ'&V7B#°Ğ¦–×÷'B²W6U&÷WFW"Òg&öÒ&æW‡Böæf–vF–öâ#°Ğ¦–×÷'B°Ğ¢&6†—fRÀĞ¢'&÷u&–v‡BÀĞ¢&öö´÷VâÀĞ¢6ÆVæF$F—2ÀĞ¢6†V6²ÀĞ¢6Æ—&ö&BÀĞ¢6Æö6³2ÀĞ¢F÷væÆöBÀĞ¢f–ÆTF÷vâÀĞ¢f–ÆUFW‡BÀĞ¢Æ–W'32ÀĞ¢ÆöFW$6—&6ÆRÀĞ¢Væ6–ÂÀĞ¢ÇW2ÀĞ¢&Vg&W6„7rÀĞ¢7&¶ÆW2ÀĞ¢G&6ƒ"ÀĞ¢WÆöBÀĞ¢W6W'5&÷VæBÀĞ¢‚ÀĞ§Òg&öÒ&ÇV6–FR×&V7B#°Ğ¦–×÷'BG—R²&V7DæöFRÒg&öÒ'&V7B#°Ğ¦–×÷'B²VF–õÆ–W"Òg&öÒ$ö6ö×öæVçG2öVF–ò×Æ–W"#°Ğ¦–×÷'B²W‡÷'Dæ÷FUFõFbÒg&öÒ$öÆ–"÷FbÖW‡÷'B#°Ğ¦–×÷'B°Ğ¢7&VFU7GVG•F6²ÀĞ¢&VÖ÷fT6÷W'6RÀĞ¢6fT6÷W'6RÀĞ¢6WD6÷W'6T&6†—fVBÀĞ¢G—R7FvSd7F–öå&W7VÇBÀĞ§Òg&öÒ$öö÷7FvSbÖ7F–öç2#°Ğ¦–×÷'BG—R²ÆææW$FFÒg&öÒ$ö6ö×öæVçG2÷7GVG’×ÆææW"#°Ğ Ğ¦W‡÷'BG—R7FvSd6÷W'6RÒ°Ğ¢–C¢7G&–æs°Ğ¢F—FÆS¢7G&–æs°Ğ¢6öFS¢7G&–æs°Ğ¢6öÆ÷#¢7G&–æs°Ğ¢FW&Ó¢7G&–ærÂçVÆÃ°Ğ¢&6†—fVC¢&ööÆVã°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R7FvSeF6²Ò°Ğ¢–C¢7G&–æs°Ğ¢F—FÆS¢7G&–æs°Ğ¢GVTC¢7G&–ærÂçVÆÃ°Ğ¢7FGW3¢7G&–æs°Ğ¢6÷W'6T–C¢7G&–ærÂçVÆÃ°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R7FvSdWfVçBÒ°Ğ¢–C¢7G&–æs°Ğ¢F—FÆS¢7G&–æs°Ğ¢G—S¢7G&–æs°Ğ¢Æö6F–öã¢7G&–ærÂçVÆÃ°Ğ¢7F'G4C¢7G&–æs°Ğ¢VæG4C¢7G&–æs°Ğ¢6÷W'6T–C¢7G&–ærÂçVÆÃ°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R÷&væ—¦VD¶W•FW&ÒÒ°Ğ¢FW&Ó¢7G&–æs°Ğ¢FVf–æ—F–öã¢7G&–æs°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R÷&væ—¦VDæ÷FU6V7F–öâÒ°Ğ¢†VF–æs¢7G&–æs°Ğ¢&öG“¢7G&–æs°Ğ¢'VÆÆWG3ó¢7G&–æuµÓ°Ğ¢F¶Vv—3ó¢7G&–æuµÓ°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R÷&væ—¦VE7GVG•VW7F–öâÒ°Ğ¢VW7F–öã¢7G&–æs°Ğ¢ç7vW#ó¢7G&–æs°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R÷&væ—¦VDæ÷FT6öçFVçBÒ°Ğ¢F—FÆS¢7G&–æs°Ğ¢7VÖÖ'“¢7G&–æs°Ğ¢¶W•FW&×3ó¢÷&væ—¦VD¶W•FW&ÕµÓ°Ğ¢6V7F–öç3ó¢÷&væ—¦VDæ÷FU6V7F–öåµÓ°Ğ¢F¶Vv—3ó¢7G&–æuµÓ°Ğ¢7GVG•VW7F–öç3ó¢÷&væ—¦VE7GVG•VW7F–öåµÓ°Ğ¢7F–öä6†V6¶Æ—7Có¢7G&–æuµÓ°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R÷&væ—¦VDæ÷FTFFÒ°Ğ¢–Có¢7G&–æs°Ğ¢F—FÆS¢7G&–æs°Ğ¢7VÖÖ'“¢7G&–æs°Ğ¢6öçFVçC¢÷&væ—¦VDæ÷FT6öçFVçC°Ğ¢7&VFVDCó¢7G&–æs°Ğ¢WFFVDCó¢7G&–æs°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R7FvSdÆV7GW&RÒ°Ğ¢–C¢7G&–æs°Ğ¢F—FÆS¢7G&–æs°Ğ¢7FGW3¢7G&–æs°Ğ¢7&VFVDC¢7G&–æs°Ğ¢GW&F–öå6V6öæG3¢çVÖ&W"ÂçVÆÃ°Ğ¢6÷W'6T–C¢7G&–ærÂçVÆÃ°Ğ¢G&ç67&—Có¢7G&–ærÂçVÆÃ°Ğ¢æ÷FSó¢÷&væ—¦VDæ÷FTFFÂçVÆÃ°Ğ¢6÷W&6UG—Só¢7G&–ærÂçVÆÃ°Ğ¢ÖVF–W&Ãó¢7G&–ærÂçVÆÃ°Ğ§Ó°Ğ Ğ¦W‡÷'BG—R7FvSdF6†&ö&DFFÒ°Ğ¢6÷W'6W3¢7FvSd6÷W'6UµÓ°Ğ¢F6·3¢7FvSeF6µµÓ°Ğ¢WfVçG3¢7FvSdWfVçEµÓ°Ğ¢ÆV7GW&W3¢7FvSdÆV7GW&UµÓ°Ğ¢W'&÷'3¢°Ğ¢6÷W'6W3¢&ööÆVã°Ğ¢F6·3¢&ööÆVã°Ğ¢WfVçG3¢&ööÆVã°Ğ¢ÆV7GW&W3¢&ööÆVã°Ğ¢Ó°Ğ¢6öçFW‡C¢7G&–æuµÓ°Ğ¢7W'&VçE6VÖW7FW#¢7G&–ærÂçVÆÃ°Ğ¢F–ÖW¦öæS¢7G&–æs°Ğ§Ó°Ğ Ğ¦gVæ7F–öâF—7Æ”FFR‡fÇVS¢7G&–ærÂF–ÖW¦öæS¢7G&–ærÂ–æ6ÇVFUF–ÖRÒfÇ6R’°Ğ¢6öç7BFFRÒæWrFFR‡fÇVR“°Ğ¢–b„çVÖ&W"æ—4æâ†FFRævWEF–ÖR‚’’’&WGW&â$FFRVæf–Æ&ÆR#°Ğ¢&WGW&âæWr–çFÂäFFUF–ÖTf÷&ÖB‚&Vâ"Â°Ğ¢ÖöçFƒ¢'6†÷'B"ÀĞ¢F“¢&çVÖW&–2"ÀĞ¢âââ†–æ6ÇVFUF–ÖRò²†÷W#¢&çVÖW&–2"ÂÖ–çWFS¢#"ÖF–v—B"Ò¢·Ò’ÀĞ¢F–ÖU¦öæS¢F–ÖW¦öæRÇÂ%UD2"ÀĞ¢Ò’æf÷&ÖB†FFR“°Ğ§ĞĞ Ğ¦gVæ7F–öâFFU7FGW2‡fÇVS¢7G&–ærÂçVÆÂÂF–ÖW¦öæS¢7G&–ær’°Ğ¢–b‚fÇVR’&WGW&â$æòFVFÆ–æR#°Ğ¢6öç7BGVRÒæWrFFR‡fÇVR“°Ğ¢–b„çVÖ&W"æ—4æâ†GVRævWEF–ÖR‚’’’&WGW&â$FFRVæf–Æ&ÆR#°Ğ¢–b†GVRævWEF–ÖR‚’ÂFFRææ÷r‚’’&WGW&â÷fW&GVR+rG¶F—7Æ”FFR‡fÇVRÂF–ÖW¦öæR—Ö°Ğ¢&WGW&âGVRG¶F—7Æ”FFR‡fÇVRÂF–ÖW¦öæR—Ö°Ğ§ĞĞ Ğ¦gVæ7F–öâ6V7F–öäW'&÷"‡²6†–ÆG&VâÓ¢²6†–ÆG&Vã¢7G&–ærÒ’°Ğ¢&WGW&âÇ&öÆSÒ'7FGW2"6Æ74æÖSÒ'&÷VæFVB×†Â&rÕ²6ffcVeÒ‚Ó2’Ó"ãRFW‡B×‡2ÆVF–ærÓRFW‡BÕ²6CFSC…Ò#ç¶6†–ÆG&VçÓÂ÷ã°Ğ§ĞĞ Ğ¦gVæ7F–öâV×G•7FFR‡²F—FÆRÂ6÷’Â7F–öâÓ¢²F—FÆS¢7G&–æs²6÷“¢7G&–æs²7F–öãó¢&V7DæöFRÒ’°Ğ¢&WGW&âÆF—b6Æ74æÖSÒ'&÷VæFVBÓ'†Â&÷&FW"&÷&FW"ÖF6†VB&÷&FW"Õ²6S6FVV%Ò&rÕ²6f&ffeÒ‚ÓB’ÓrFW‡BÖ6VçFW"#àĞ¢Ç6Æ74æÖSÒ'FW‡B×6ÒföçBÖW‡G&&öÆBFW‡BÕ²33s3CUÒ#ç·F—FÆWÓÂ÷àĞ¢Ç6Æ74æÖSÒ&×‚ÖWFò×BÓÖ‚×r×6ÒFW‡B×‡2ÆVF–ærÓRFW‡BÕ²3†ƒC“EÒ#ç¶6÷—ÓÂ÷àĞ¢¶7F–öâbbÆF—b6Æ74æÖSÒ&×BÓB#ç¶7F–öçÓÂöF—cçĞĞ¢ÂöF—cã°Ğ§ĞĞ Ğ¦gVæ7F–öâV–6´7F–öâ‡²–6öã¢–6öâÂF—FÆRÂ6÷’Âöä6Æ–6²ÂF—6&ÆVBÒfÇ6RÓ¢°Ğ¢–6öã¢G—VöbWÆöC°Ğ¢F—FÆS¢7G&–æs°Ğ¢6÷“¢7G&–æs°Ğ¢öä6Æ–6³ó¢‚’Óâfö–C°Ğ¢F—6&ÆVCó¢&ööÆVã°Ğ§Ò’°Ğ¢6öç7B6öçFVçBÒÃãÇ7â6Æ74æÖSÒ&w&–B6—¦RÓ’6‡&–æ²ÓÆ6RÖ—FV×2Ö6VçFW"&÷VæFVB×†Â&rÕ²6cVFfeÒFW‡BÕ²3s#S–S…Ò#ãÄ–6öâ6Æ74æÖSÒ'6—¦RÓB"óãÂ÷7ããÇ7â6Æ74æÖSÒ&Ö–â×rÓFW‡BÖÆVgB#ãÇ7â6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖW‡G&&öÆB#ç·F—FÆWÓÂ÷7ããÇ7â6Æ74æÖSÒ&×BÓãR&Æö6²FW‡BÕ³…ÒÆVF–ærÓBFW‡BÕ²3†ƒC“EÒ#ç¶6÷—ÓÂ÷7ããÂ÷7ãç¶F—6&ÆVBbbÇ7â6Æ74æÖSÒ&ÖÂÖWFò6‡&–æ²Ó&÷VæFVBÖgVÆÂ&rÕ²6cVfcUÒ‚Ó"’ÓFW‡BÕ³‡…ÒföçBÖ&Æ6²WW&66RG&6¶–ær×v–FRFW‡BÕ²3ƒSƒ†EÒ#äÆFW#Â÷7ãçÓÂóã°Ğ¢6öç7B6Æ74æÖRÒfÆW‚Ö–âÖ‚Õ³s'…Ò—FV×2Ö6VçFW"vÓ2&÷VæFVBÓ'†Â&÷&FW"&÷&FW"Õ²6S–SVVeÒ&r×v†—FRÓ2FW‡BÖÆVgBG&ç6—F–öâG¶F—6&ÆVBò&7W'6÷"Öæ÷BÖÆÆ÷vVB÷6—G’ÓsR"¢&†÷fW#¢×G&ç6ÆFR×’ÓãR†÷fW#¦&÷&FW"Õ²66f3Vc5Ò†÷fW#§6†F÷rÕ³ó…ó#W…÷&v&ƒ3’Ã#’ÃsBÂãr•Ò'Ö°Ğ¢&WGW&âF—6&ÆVBòÆF—b&–ÖF—6&ÆVCÒ'G'VR"6Æ74æÖS×¶6Æ74æÖWÓç¶6öçFVçGÓÂöF—câ¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶öä6Æ–6·Ò6Æ74æÖS×¶6Æ74æÖWÓç¶6öçFVçGÓÂö'WGFöãã°Ğ§ĞĞ Ğ¦W‡÷'BgVæ7F–öâ7FvSdF6†&ö&B‡°Ğ¢FFÀĞ¢ÆææW$FFÀĞ¢gVÆÄæÖRÀĞ¢öä6GW&RÀĞ¢öä76—7FçBÀĞ¢öäw&÷W2ÀĞ¢öä÷Vä6÷W'6RÀĞ¢öä÷Vä6÷W'6W2ÀĞ¢öä÷VäÆV7GW&W2ÀĞ¢öä÷VåÆææW"ÀĞ§Ó¢°Ğ¢FF¢7FvSdF6†&ö&DFF°Ğ¢ÆææW$FF¢ÆææW$FF°Ğ¢gVÆÄæÖS¢7G&–æs°Ğ¢öä6GW&S¢‚’Óâfö–C°Ğ¢öä76—7FçC¢‚’Óâfö–C°Ğ¢öäw&÷W3¢‚’Óâfö–C°Ğ¢öä÷Vä6÷W'6S¢†–C¢7G&–ær’Óâfö–C°Ğ¢öä÷Vä6÷W'6W3¢‚’Óâfö–C°Ğ¢öä÷VäÆV7GW&W3¢‚’Óâfö–C°Ğ¢öä÷VåÆææW#¢‚’Óâfö–C°Ğ§Ò’°Ğ¢6öç7B&÷WFW"ÒW6U&÷WFW"‚“°Ğ¢6öç7B·F6´F–ÆörÂ6WEF6´F–ÆöuÒÒW6U7FFR†fÇ6R“°Ğ¢6öç7B¶ÖW76vRÂ6WDÖW76vUÒÒW6U7FFR‚""“°Ğ¢6öç7B·VæF–ærÂ7F'EG&ç6—F–öåÒÒW6UG&ç6—F–öâ‚“°Ğ¢6öç7Bf—'7DæÖRÒgVÆÄæÖRçG&–Ò‚’ç7Æ—B‚õÇ2²ò•³ÒÇÂ%7GVFVçB#°Ğ¢6öç7B7F—fT6÷W'6W2ÒW6TÖVÖò‚‚’ÓâFFæ6÷W'6W2æf–ÇFW"‚†6÷W'6R’ÓàĞ¢6÷W'6Ræ&6†—fVBbb‚FFæ7W'&VçE6VÖW7FW"ÇÂ6÷W'6RçFW&ÒÇÂ6÷W'6RçFW&ÒÓÓÒFFæ7W'&VçE6VÖW7FW"’’Â¶FFæ6÷W'6W2ÂFFæ7W'&VçE6VÖW7FW%Ò“°Ğ¢6öç7B6÷W'6TæÖW2ÒW6TÖVÖò‚‚’ÓâæWrÖ†FFæ6÷W'6W2æÖ‚†6÷W'6R’Óâ¶6÷W'6Ræ–BÂG¶6÷W'6Ræ6öFWÒ+rG¶6÷W'6RçF—FÆWÖÒ’’Â¶FFæ6÷W'6W5Ò“°Ğ¢6öç7B6ÆVæF$—FV×2Ò°Ğ¢ââæFFæWfVçG0Ğ¢æÖ‚†WfVçB’Óâ‡°Ğ¢–C¢WfVçBÒG¶WfVçBæ–GÖÀĞ¢F—FÆS¢WfVçBçF—FÆRÀĞ¢7F'G4C¢WfVçBç7F'G4BÀĞ¢FWF–Ã¢WfVçBæÆö6F–öâÇÂ†WfVçBçG—RÓÓÒ'&Wf–Wr"ò%&Wf–Wr&Æö6²"¢WfVçBçG—RÓÓÒ&W†Ò"ò$W†Ò"¢WfVçBçG—RÓÓÒ&Æ""ò$Æ""¢WfVçBçG—RÓÓÒ&ÆV7GW&R"ò$6Æ72ÆV7GW&R"¢%7GVG’&Æö6²"’ÀĞ¢Ò’’ÀĞ¢ââçÆææW$FFæw&÷W6W76–öç2æÖ‚‡6W76–öâ’Óâ‡°Ğ¢–C¢w&÷WÒG·6W76–öâæ–GÖÀĞ¢F—FÆS¢6W76–öâçF—FÆRÀĞ¢7F'G4C¢6W76–öâç7F'G4BÀĞ¢FWF–Ã¢7GVG’w&÷W+rG·6W76–öâæw&÷WæÖWÖÀĞ¢Ò’’ÀĞ¢Òç6÷'B‚†f—'7BÂ6V6öæB’ÓâFFRç'6R†f—'7Bç7F'G4B’ÒFFRç'6R‡6V6öæBç7F'G4B’’ç6Æ–6RƒÂR“°Ğ¢6öç7B&öw&W746&G2Ò°Ğ¢²Æ&VÃ¢%F6·26ö×ÆWFVB"ÂfÇVS¢ÆææW$FFç&öw&W72æ6ö×ÆWFVEF6·2ÂFWF–Ã¢%6fVBF6·2Ö&¶VB6ö×ÆWFR"ÒÀĞ¢²Æ&VÃ¢$ÆV7GW&W2&ö6W76VB"ÂfÇVS¢ÆææW$FFç&öw&W72ç&ö6W76VDÆV7GW&W2ÂFWF–Ã¢%&VG’G&ç67&—G2–â–÷W"Æ–'&'’"ÒÀĞ¢°Ğ¢Æ&VÃ¢%V—¢GFV×G2"ÀĞ¢fÇVS¢ÆææW$FFç&öw&W72çV—¤GFV×G2ÀĞ¢FWF–Ã¢ÆææW$FFç&öw&W72ç&V6VçEV—¤fW&vRÓÓÒçVÆÀĞ¢ò$æò66÷&VBGFV×G2–WB Ğ¢¢G·ÆææW$FFç&öw&W72ç&V6VçEV—¤fW&vWÒRfW&vR+rÆFW7BÀĞ¢ÒÀĞ¢Ó°Ğ Ğ¢gVæ7F–öâ7V&Ö—EF6²†WfVçC¢f÷&ÔWfVçCÄ…DÔÄf÷&ÔVÆVÖVçCâ’°Ğ¢WfVçBç&WfVçDFVfVÇB‚“°Ğ¢6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°Ğ¢7F'EG&ç6—F–öâ†7–æ2‚’Óâ°Ğ¢6öç7B&W7VÇBÒv—B7&VFU7GVG•F6²†æWrf÷&ÔFF†f÷&Ò’“°Ğ¢6WDÖW76vR‡&W7VÇBæW'&÷"óò&W7VÇBç7V66W72óò%F6²WFFR6ö×ÆWFVBâ"“°Ğ¢–b‚&W7VÇBæW'&÷"’°Ğ¢f÷&Òç&W6WB‚“°Ğ¢6WEF6´F–Æör†fÇ6R“°Ğ¢&÷WFW"ç&Vg&W6‚‚“°Ğ¢ĞĞ¢Ò“°Ğ¢ĞĞ Ğ¢&WGW&âÆF—b6Æ74æÖSÒ&fFR×W76R×’ÓR#àĞ¢Ç6V7F–öâ6Æ74æÖSÒ&fÆW‚fÆW‚Ö6öÂ§W7F–g’Ö&WGvVVâvÓ26Ó¦fÆW‚×&÷r6Ó¦—FV×2ÖVæB#àĞ¢ÆF—càĞ¢Ç6Æ74æÖSÒ'FW‡BÕ³…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ãVVÕÒFW‡BÕ²3s#S–S…Ò#å–÷W"7GVG’76SÂ÷àĞ¢Æƒ6Æ74æÖSÒ&×BÓFW‡BÕ³#W…ÒföçBÖ&Æ6²G&6¶–ærÕ²Óã…ÒFW‡BÕ²3s3&EÒ6Ó§FW‡BÕ³#—…Ò#åvVÆ6öÖR&6²Â¶f—'7DæÖWÓÂöƒàĞ¢Ç6Æ74æÖSÒ&×BÓãRFW‡BÕ³'…ÒÆVF–ærÓRFW‡BÕ²3vCssƒ•Ò#ç¶FFæ6öçFW‡BæÆVæwF‚òFFæ6öçFW‡Bæ¦ö–â‚"+r"’¢%–÷W"6÷W'6W2Â7GVG’F6·2ÂæBÆV7GW&W2–âöæRÆ6Râ'ÓÂ÷àĞ¢ÂöF—càĞ¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WEF6´F–Æör‡G'VR—Ò6Æ74æÖSÒ&–æÆ–æRÖfÆW‚‚Ó—FV×2Ö6VçFW"§W7F–g’Ö6VçFW"vÓ"6VÆb×7F'B&÷VæFVB×†Â&rÕ²3s#S–S…Ò‚ÓBFW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡B×v†—FRG&ç6—F–öâ†÷fW#¦&rÕ²3ƒc–VEÒ6Ó§6VÆbÖWFò#ãÅÇW26Æ74æÖSÒ'6—¦RÓB"óâFBF6³Âö'WGFöãàĞ¢Â÷6V7F–öãàĞ Ğ¢Ç6V7F–öâ&–ÖÆ&VÃÒ%V–6²7F–öç2"6Æ74æÖSÒ&w&–BvÓ"6Ó¦w&–BÖ6öÇ2Ó2#àĞ¢ÅV–6´7F–öâ–6öã×µWÆöGÒF—FÆSÒ%WÆöBÆV7GW&R"6÷“Ò%GW&â6Æ72ÖFW&–Â–çFòæ÷FW2"öä6Æ–6³×¶öä6GW&WÒóàĞ¢ÅV–6´7F–öâ–6öã×µ7&¶ÆW7ÒF—FÆSÒ$6²7GVG•7FF–öâ"6÷“Ò$vWB†VÇv—F‚–÷W"7GVF–W2"öä6Æ–6³×¶öä76—7FçGÒóàĞ¢ÅV–6´7F–öâ–6öã×µW6W'5&÷VæGÒF—FÆSÒ%7GVG’w&÷W2"6÷“Ò$f–æB6Æ76ÖFW2æBÆâ6W76–öç2"öä6Æ–6³×¶öäw&÷W7ÒóàĞ¢Â÷6V7F–öãàĞ Ğ¢¶ÖW76vRbbÇ&öÆSÒ'7FGW2"6Æ74æÖSÒ'&÷VæFVB×†Â&rÕ²6cVffeÒ‚ÓB’Ó2FW‡B×‡2föçB×6VÖ–&öÆBFW‡BÕ²3V#Cv&EÒ#ç¶ÖW76vWÓÂ÷çĞĞ Ğ¢Ç6V7F–öâ&–ÖÆ&VÃÒ$ÆV&æ–ær&öw&W72g&öÒ6fVB&V6÷&G2"6Æ74æÖSÒ'&÷VæFVBÕ³#G…Ò&÷&FW"&÷&FW"Õ²6S–SVVeÒ&r×v†—FRÓR6Ó§Ób#àĞ¢ÆF—b6Æ74æÖSÒ&Ö"ÓBfÆW‚fÆW‚Ö6öÂ§W7F–g’Ö&WGvVVâvÓ26Ó¦fÆW‚×&÷r6Ó¦—FV×2Ö6VçFW"#àĞ¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ã&VÕÒFW‡BÕ²3–“F5Ò#å–÷W"ÆV&æ–ær÷fW'f–WsÂ÷ãÆƒ"6Æ74æÖSÒ&×BÓFW‡BÕ³g…ÒföçBÖW‡G&&öÆB#å&öw&W72BvÆæ6SÂöƒ#ãÂöF—càĞ¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶öä÷VåÆææW'Ò6Æ74æÖSÒ&–æÆ–æRÖfÆW‚‚Ó’—FV×2Ö6VçFW"§W7F–g’Ö6VçFW"vÓ"6VÆb×7F'B&÷VæFVB×†Â&rÕ²6c6cfeÒ‚Ó2FW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…ÒG&ç6—F–öâ†÷fW#¦&rÕ²6V&SffeÒ6Ó§6VÆbÖWFò#ãÄ6ÆVæF$F—26Æ74æÖSÒ'6—¦RÓ2ãR"óâ÷VâÆææW#Âö'WGFöãàĞ¢ÂöF—càĞ¢ÆF—b6Æ74æÖSÒ&w&–BvÓ"6Ó¦w&–BÖ6öÇ2Ó2#àĞ¢·&öw&W746&G2æÖ‚†—FVÒ’ÓâÆ'F–6ÆR¶W“×¶—FVÒæÆ&VÇÒ6Æ74æÖSÒ'&÷VæFVBÓ'†Â&÷&FW"&÷&FW"Õ²6cVFcEÒ&rÕ²6f&ffeÒÓ2ãR#àĞ¢Ç6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ãVÕÒFW‡BÕ²3“†“…Ò#ç¶—FVÒæÆ&VÇÓÂ÷àĞ¢·ÆææW$FFæW'&÷'2ç&öw&W70Ğ¢òÇ6Æ74æÖSÒ&×BÓ"FW‡B×‡2föçBÖ&öÆBFW‡BÕ²6CFSC…Ò#ä6÷VÆBæ÷BÆöCÂ÷àĞ¢¢ÃãÇ6Æ74æÖSÒ&×BÓãRFW‡BÕ³#'…ÒföçBÖ&Æ6²G&6¶–ær×F–v‡BFW‡BÕ²3s3&EÒ#ç¶—FVÒçfÇVWÓÂ÷ãÇ6Æ74æÖSÒ&×BÓãRFW‡BÕ³—…ÒFW‡BÕ²3†ƒC“EÒ#ç¶—FVÒæFWF–ÇÓÂ÷ãÂóçĞĞ¢Âö'F–6ÆSâ—ĞĞ¢ÂöF—càĞ¢Â÷6V7F–öãàĞ Ğ¢Ç6V7F–öâ6Æ74æÖSÒ&w&–BvÓR†Ã¦w&–BÖ6öÇ2Ó"#àĞ¢ÆF—b6Æ74æÖSÒ'&÷VæFVBÕ³#G…Ò&÷&FW"&÷&FW"Õ²6S–SVVeÒ&r×v†—FRÓR6Ó§Ób#àĞ¢ÆF—b6Æ74æÖSÒ&Ö"ÓBfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâvÓ2#ãÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ã&VÕÒFW‡BÕ²3–“F5Ò#å–÷W"æW‡B7FW3Â÷ãÆƒ"6Æ74æÖSÒ&×BÓFW‡BÕ³g…ÒföçBÖW‡G&&öÆB#åW6öÖ–ærF6·3Âöƒ#ãÂöF—cãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WEF6´F–Æör‡G'VR—Ò6Æ74æÖSÒ'FW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#äFBF6³Âö'WGFöããÂöF—càĞ¢¶FFæW'&÷'2çF6·2òÅ6V7F–öäW'&÷#åF6·26÷VÆBæ÷B&RÆöFVBâ6†V6²F†BF†R7FvRBÖ–w&F–öâ—2Æ–VBÂF†Vâ&Vg&W6‚ãÂõ6V7F–öäW'&÷#â¢FFçF6·2æÆVæwF‚òÇVÂ6Æ74æÖSÒ&F—f–FR×’F—f–FRÕ²6cVFcEÒ#ç¶FFçF6·2ç6Æ–6RƒÂR’æÖ‚‡F6²’ÓâÆÆ’¶W“×·F6²æ–GÒ6Æ74æÖSÒ&fÆW‚—FV×2×7F'BvÓ2’Ó2f—'7C§BÓÆ7C§"Ó#ãÇ7â6Æ74æÖSÒ&×BÓãRw&–B6—¦RÓ‚6‡&–æ²ÓÆ6RÖ—FV×2Ö6VçFW"&÷VæFVB×†Â&rÕ²6c6cfeÒFW‡BÕ²3s#S–S…Ò#ãÄ6†V6²6Æ74æÖSÒ'6—¦RÓB"óãÂ÷7ããÆF—b6Æ74æÖSÒ&Ö–â×rÓfÆW‚Ó#ãÇ6Æ74æÖSÒ'G'Væ6FRFW‡B×‡2föçBÖW‡G&&öÆB#ç·F6²çF—FÆWÓÂ÷ãÇ6Æ74æÖSÒ&×BÓFW‡BÕ³…ÒFW‡BÕ²3ƒSƒ†EÒ#ç·F6²æ6÷W'6T–Bò6÷W'6TæÖW2ævWB‡F6²æ6÷W'6T–B’óò$6÷W'6R"¢%W'6öæÂF6²'Ò+r¶FFU7FGW2‡F6²æGVTBÂFFçF–ÖW¦öæR—ÓÂ÷ãÂöF—cãÂöÆ“â—ÓÂ÷VÃâ¢ÄV×G•7FFRF—FÆSÒ$æ÷F†–ærGVR–WB"6÷“Ò$FB7GVG’F6²÷"FVFÆ–æRæB—Bv–ÆÂV"†W&Râ"7F–öã×³Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WEF6´F–Æör‡G'VR—Ò6Æ74æÖSÒ'FW‡B×‡2föçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#ä7&VFR–÷W"f—'7BF6³Âö'WGFöãçÒóçĞĞ¢ÂöF—càĞ Ğ¢ÆF—b6Æ74æÖSÒ'&÷VæFVBÕ³#G…Ò&÷&FW"&÷&FW"Õ²6S–SVVeÒ&r×v†—FRÓR6Ó§Ób#àĞ¢ÆF—b6Æ74æÖSÒ&Ö"ÓBfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâvÓ2#ãÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"#ãÇ7â6Æ74æÖSÒ&w&–B6—¦RÓ‚Æ6RÖ—FV×2Ö6VçFW"&÷VæFVB×†Â&rÕ²6SfcvVeÒFW‡BÕ²3&c“CfeÒ#ãÄ6ÆVæF$F—26Æ74æÖSÒ'6—¦RÓB"óãÂ÷7ããÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ã&VÕÒFW‡BÕ²3–“F5Ò#äöâ–÷W"6ÆVæF#Â÷ãÆƒ"6Æ74æÖSÒ&×BÓFW‡BÕ³g…ÒföçBÖW‡G&&öÆB#äæW‡BWÂöƒ#ãÂöF—cãÂöF—cãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶öä÷VåÆææW'Ò6Æ74æÖSÒ'FW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#åf–WrÆææW#Âö'WGFöããÂöF—càĞ¢¶FFæW'&÷'2æWfVçG2ÇÂÆææW$FFæW'&÷'2æw&÷W6W76–öç0Ğ¢òÅ6V7F–öäW'&÷#å6öÖR6ÆVæF"—FV×26÷VÆBæ÷B&RÆöFVBâ÷VâF†RÆææW"÷"&Vg&W6‚FòG'’v–âãÂõ6V7F–öäW'&÷#àĞ¢¢6ÆVæF$—FV×2æÆVæwF€Ğ¢òÇVÂ6Æ74æÖSÒ&F—f–FR×’F—f–FRÕ²6cVFcEÒ#ç¶6ÆVæF$—FV×2æÖ‚†—FVÒ’ÓâÆÆ’¶W“×¶—FVÒæ–GÒ6Æ74æÖSÒ&fÆW‚—FV×2×7F'BvÓ2’Ó2f—'7C§BÓÆ7C§"Ó#ãÇ7â6Æ74æÖSÒ&×BÓãRw&–B6—¦RÓ‚6‡&–æ²ÓÆ6RÖ—FV×2Ö6VçFW"&÷VæFVB×†Â&rÕ²6SfcvVeÒFW‡BÕ²3&c“CfeÒ#ãÄ6Æö6³26Æ74æÖSÒ'6—¦RÓB"óãÂ÷7ããÆF—b6Æ74æÖSÒ&Ö–â×rÓfÆW‚Ó#ãÇ6Æ74æÖSÒ'G'Væ6FRFW‡B×‡2föçBÖW‡G&&öÆB#ç¶—FVÒçF—FÆWÓÂ÷ãÇ6Æ74æÖSÒ&×BÓFW‡BÕ³…ÒFW‡BÕ²3ƒSƒ†EÒ#ç¶F—7Æ”FFR†—FVÒç7F'G4BÂFFçF–ÖW¦öæRÂG'VR—Ò+r¶—FVÒæFWF–ÇÓÂ÷ãÂöF—cãÂöÆ“â—ÓÂ÷VÃàĞ¢¢ÄV×G•7FFRF—FÆSÒ$æ÷F†–ær66†VGVÆVB–WB"6÷“Ò%–÷W"7GVG’&Æö6·2Â&Wf–WrF–ÖRÂæBw&÷W6W76–öç2v–ÆÂV"†W&Râ"óçĞĞ¢ÂöF—càĞ¢Â÷6V7F–öãàĞ Ğ¢Ç6V7F–öâ6Æ74æÖSÒ&w&–BvÓR†Ã¦w&–BÖ6öÇ2Õ³ã&g%òã†g%Ò#àĞ¢ÆF—b6Æ74æÖSÒ'&÷VæFVBÕ³#G…Ò&÷&FW"&÷&FW"Õ²6S–SVVeÒ&r×v†—FRÓR6Ó§Ób#àĞ¢ÆF—b6Æ74æÖSÒ&Ö"ÓBfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ#ãÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ã&VÕÒFW‡BÕ²3–“F5Ò#å–÷W"6VÖW7FW#Â÷ãÆƒ"6Æ74æÖSÒ&×BÓFW‡BÕ³g…ÒföçBÖW‡G&&öÆB#ä7F—fR6÷W'6W3Âöƒ#ãÂöF—cãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶öä÷Vä6÷W'6W7Ò6Æ74æÖSÒ'FW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#åf–WrÆÃÂö'WGFöããÂöF—càĞ¢¶FFæW'&÷'2æ6÷W'6W2òÅ6V7F–öäW'&÷#å–÷W"6÷W'6W26÷VÆBæ÷B&RÆöFVBâ&Vg&W6‚FòG'’v–âãÂõ6V7F–öäW'&÷#â¢7F—fT6÷W'6W2æÆVæwF‚òÆF—b6Æ74æÖSÒ'76R×’Ó"#ç¶7F—fT6÷W'6W2ç6Æ–6RƒÂB’æÖ‚†6÷W'6R’ÓâÆ'WGFöâG—SÒ&'WGFöâ"¶W“×¶6÷W'6Ræ–GÒöä6Æ–6³×²‚’Óâöä÷Vä6÷W'6R†6÷W'6Ræ–B—Ò6Æ74æÖSÒ&fÆW‚rÖgVÆÂ—FV×2Ö6VçFW"vÓ2&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6cVFcEÒÓ2FW‡BÖÆVgBG&ç6—F–öâ†÷fW#¦&÷&FW"Õ²66f3Vc5Ò†÷fW#¦&rÕ²6f&ffeÒ#ãÇ7â6Æ74æÖSÒ'6—¦RÓ"ãR6‡&–æ²Ó&÷VæFVBÖgVÆÂ"7G–ÆS×·²&6¶w&÷VæD6öÆ÷#¢6÷W'6Ræ6öÆ÷"×ÒóãÇ7â6Æ74æÖSÒ&Ö–â×rÓfÆW‚Ó#ãÇ7â6Æ74æÖSÒ&&Æö6²G'Væ6FRFW‡B×‡2föçBÖW‡G&&öÆB#ç¶6÷W'6RçF—FÆWÓÂ÷7ããÇ7â6Æ74æÖSÒ&×BÓãR&Æö6²G'Væ6FRFW‡BÕ³…ÒFW‡BÕ²3ƒSƒ†EÒ#ç¶6÷W'6Ræ6öFW×¶6÷W'6RçFW&Òò+rG¶6÷W'6RçFW&×Ö¢"'ÓÂ÷7ããÂ÷7ããÄ'&÷u&–v‡B6Æ74æÖSÒ'6—¦RÓ2ãR6‡&–æ²ÓFW‡BÕ²3“““6Ò"óãÂö'WGFöãâ—ÓÂöF—câ¢ÄV×G•7FFRF—FÆSÒ%–÷W"6÷W'6RÆ—7B—2V×G’"6÷“Ò$FB–÷W"f—'7B6÷W'6RFò¶VW—G27GVG’v÷&²÷&væ—¦VBâ"7F–öã×³Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶öä÷Vä6÷W'6W7Ò6Æ74æÖSÒ'FW‡B×‡2föçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#äFB–÷W"f—'7B6÷W'6SÂö'WGFöãçÒóçĞĞ¢ÂöF—càĞ Ğ¢ÆF—b6Æ74æÖSÒ'&÷VæFVBÕ³#G…Ò&÷&FW"&÷&FW"Õ²6S–SVVeÒ&r×v†—FRÓR6Ó§Ób#àĞ¢ÆF—b6Æ74æÖSÒ&Ö"ÓBfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ#ãÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ã&VÕÒFW‡BÕ²3–“F5Ò#å–6²Wv†W&R–÷RÆVgBöfcÂ÷ãÆƒ"6Æ74æÖSÒ&×BÓFW‡BÕ³g…ÒföçBÖW‡G&&öÆB#å&V6VçBÆV7GW&W3Âöƒ#ãÂöF—cãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶öä÷VäÆV7GW&W7Ò6Æ74æÖSÒ'FW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#åf–WrÆÃÂö'WGFöããÂöF—càĞ¢¶FFæW'&÷'2æÆV7GW&W2òÅ6V7F–öäW'&÷#å–÷W"&V6VçBÆV7GW&W26÷VÆBæ÷B&RÆöFVBâ&Vg&W6‚FòG'’v–âãÂõ6V7F–öäW'&÷#â¢FFæÆV7GW&W2æÆVæwF‚òÆF—b6Æ74æÖSÒ'76R×’Ó"#ç¶FFæÆV7GW&W2ç6Æ–6RƒÂB’æÖ‚†ÆV7GW&R’ÓâÆ'WGFöâ¶W“×¶ÆV7GW&Ræ–GÒG—SÒ&'WGFöâ"öä6Æ–6³×¶öä÷VäÆV7GW&W7Ò6Æ74æÖSÒ&fÆW‚rÖgVÆÂÖ–â×rÓ—FV×2Ö6VçFW"vÓ2&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6cVFcEÒÓ2FW‡BÖÆVgBG&ç6—F–öâ†÷fW#¦&÷&FW"Õ²66f3Vc5Ò†÷fW#¦&rÕ²6f&ffeÒ#ãÇ7â6Æ74æÖSÒ&w&–B6—¦RÓ’6‡&–æ²ÓÆ6RÖ—FV×2Ö6VçFW"&÷VæFVB×†Â&rÕ²6c6cfeÒFW‡BÕ²3s#S–S…Ò#ãÄf–ÆUFW‡B6Æ74æÖSÒ'6—¦RÓB"óãÂ÷7ããÇ7â6Æ74æÖSÒ&Ö–â×rÓfÆW‚Ó#ãÇ7â6Æ74æÖSÒ&&Æö6²G'Væ6FRFW‡B×‡2föçBÖW‡G&&öÆB#ç¶ÆV7GW&RçF—FÆWÓÂ÷7ããÇ7â6Æ74æÖSÒ&×BÓ&Æö6²G'Væ6FRFW‡BÕ³…ÒFW‡BÕ²3ƒSƒ†EÒ#ç¶ÆV7GW&Ræ6÷W'6T–Bò6÷W'6TæÖW2ævWB†ÆV7GW&Ræ6÷W'6T–B’óò$6÷W'6R"¢%Væ76–væVBÆV7GW&R'Ò+r¶ÆV7GW&Rç7FGW7Ò+r¶F—7Æ”FFR†ÆV7GW&Ræ7&VFVDBÂFFçF–ÖW¦öæR—ÓÂ÷7ããÂ÷7ããÄ'&÷u&–v‡B6Æ74æÖSÒ'6—¦RÓ2ãR6‡&–æ²ÓFW‡BÕ²3“““6Ò"óãÂö'WGFöãâ—ÓÂöF—câ¢ÄV×G•7FFRF—FÆSÒ$æòÆV7GW&W2–WB"6÷“Ò$–×÷'FVB&V6÷&F–æw2æBÖFW&–Ç2v–ÆÂV"†W&Râ"7F–öã×³Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶öä6GW&WÒ6Æ74æÖSÒ'FW‡B×‡2föçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#åWÆöB–÷W"f—'7BÆV7GW&SÂö'WGFöãçÒóçĞĞ¢ÂöF—càĞ¢Â÷6V7F–öãàĞ Ğ¢·F6´F–ÆörbbÆF—b6Æ74æÖSÒ&f—†VB–ç6WBÓ¢Õ³“Òw&–BÆ6RÖ—FV×2Ö6VçFW"&rÕ²3s3&EÒóCRÓB&6¶G&÷Ö&ÇW"×6Ò#ãÇ6V7F–öâ&öÆSÒ&F–Æör"&–ÖÖöFÃÒ'G'VR"&–ÖÆ&VÆÆVF'“Ò'F6²ÖF–Æör×F—FÆR"6Æ74æÖSÒ'rÖgVÆÂÖ‚×rÕ³CC…Ò&÷VæFVBÕ³#G…Ò&r×v†—FRÓR6†F÷rÓ'†Â6Ó§Ób#ãÆF—b6Æ74æÖSÒ&fÆW‚—FV×2×7F'B§W7F–g’Ö&WGvVVâvÓB#ãÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ãFVÕÒFW‡BÕ²3s#S–S…Ò#å7F’öâG&6³Â÷ãÆƒ"–CÒ'F6²ÖF–Æör×F—FÆR"6Æ74æÖSÒ&×BÓFW‡B×†ÂföçBÖ&Æ6²#äFB7GVG’F6³Âöƒ#ãÂöF—cãÆ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃÒ$6Æ÷6R"öä6Æ–6³×²‚’Óâ6WEF6´F–Æör†fÇ6R—Ò6Æ74æÖSÒ&w&–B6—¦RÓ‚Æ6RÖ—FV×2Ö6VçFW"&÷VæFVBÖÆr&rÕ²6cFc&cuÒ#ãÅ‚6Æ74æÖSÒ'6—¦RÓB"óãÂö'WGFöããÂöF—cãÆf÷&Òöå7V&Ö—C×·7V&Ö—EF6·Ò6Æ74æÖSÒ&×BÓR76R×’Ó2#ãÆÆ&VÂ6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖ&öÆB#åF6²F—FÆSÆ–çWBæÖSÒ'F—FÆR"&WV—&VBÖ–äÆVæwFƒ×³'ÒÖ„ÆVæwFƒ×³cÒ6Æ74æÖSÒ&×BÓãR‚ÓrÖgVÆÂ&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò‚Ó2FW‡B×6Ò÷WFÆ–æRÖæöæRfö7W3¦&÷&FW"Õ²6“–VEÒ"Æ6V†öÆFW#Ò&Rærâ&Wf–WrÆV7GW&Ræ÷FW2"óãÂöÆ&VÃãÆÆ&VÂ6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖ&öÆB#ä6÷W'6R†÷F–öæÂ“Ç6VÆV7BæÖSÒ&6÷W'6T–B"FVfVÇEfÇVSÒ""6Æ74æÖSÒ&×BÓãR‚ÓrÖgVÆÂ&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò&r×v†—FR‚Ó2FW‡B×6Ò÷WFÆ–æRÖæöæRfö7W3¦&÷&FW"Õ²6“–VEÒ#ãÆ÷F–öâfÇVSÒ"#åW'6öæÂF6³Âö÷F–öãç¶7F—fT6÷W'6W2æÖ‚†6÷W'6R’ÓâÆ÷F–öâ¶W“×¶6÷W'6Ræ–GÒfÇVS×¶6÷W'6Ræ–GÓç¶6÷W'6Ræ6öFWÒ+r¶6÷W'6RçF—FÆWÓÂö÷F–öãâ—ÓÂ÷6VÆV7CãÂöÆ&VÃãÆÆ&VÂ6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖ&öÆB#äFVFÆ–æR†÷F–öæÂ“Æ–çWBæÖSÒ&GVTB"G—SÒ&FFWF–ÖRÖÆö6Â"6Æ74æÖSÒ&×BÓãR‚ÓrÖgVÆÂ&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò‚Ó2FW‡B×6Ò÷WFÆ–æRÖæöæRfö7W3¦&÷&FW"Õ²6“–VEÒ"óãÂöÆ&VÃãÆ–çWBG—SÒ&†–FFVâ"æÖSÒ'F–ÖW¦öæR"fÇVS×¶FFçF–ÖW¦öæWÒóç¶ÖW76vRbbÇ&öÆSÒ'7FGW2"6Æ74æÖSÒ'FW‡B×‡2föçB×6VÖ–&öÆBFW‡BÕ²6CFSC…Ò#ç¶ÖW76vWÓÂ÷çÓÆF—b6Æ74æÖSÒ&fÆW‚§W7F–g’ÖVæBvÓ"BÓ"#ãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WEF6´F–Æör†fÇ6R—Ò6Æ74æÖSÒ&‚Ó&÷VæFVB×†Â‚ÓBFW‡B×‡2föçBÖ&öÆBFW‡BÕ²3sssƒÒ#ä6æ6VÃÂö'WGFöããÆ'WGFöâG—SÒ'7V&Ö—B"F—6&ÆVC×·VæF–æwÒ6Æ74æÖSÒ&–æÆ–æRÖfÆW‚‚Ó—FV×2Ö6VçFW"vÓ"&÷VæFVB×†Â&rÕ²3s#S–S…Ò‚ÓBFW‡B×‡2föçBÖW‡G&&öÆBFW‡B×v†—FRF—6&ÆVC¦÷6—G’Óc#ç·VæF–ærbbÄÆöFW$6—&6ÆR6Æ74æÖSÒ'6—¦RÓ2ãRæ–ÖFR×7–â"óçÔFBF6³Âö'WGFöããÂöF—cãÂöf÷&ÓãÂ÷6V7F–öããÂöF—cçĞĞ¢ÂöF—cã°Ğ§ĞĞ Ğ¦W‡÷'BgVæ7F–öâ7FvSd6÷W'6W2‡°Ğ¢FFÀĞ¢6V&6‚ÀĞ¢6VÆV7FVD6÷W'6T–BÀĞ¢öä÷Vä6÷W'6RÀĞ¢öä6GW&RÀĞ§Ó¢°Ğ¢FF¢7FvSdF6†&ö&DFF°Ğ¢6V&6ƒ¢7G&–æs°Ğ¢6VÆV7FVD6÷W'6T–C¢7G&–ærÂçVÆÃ°Ğ¢öä÷Vä6÷W'6S¢†–C¢7G&–ærÂçVÆÂ’Óâfö–C°Ğ¢öä6GW&S¢‚’Óâfö–C°Ğ§Ò’°Ğ¢6öç7B&÷WFW"ÒW6U&÷WFW"‚“°Ğ¢6öç7B·6†÷t&6†—fVBÂ6WE6†÷t&6†—fVEÒÒW6U7FFR†fÇ6R“°Ğ¢6öç7BFW&×2ÒW6TÖVÖò‚‚’Óâ²ââææWr6WB†FFæ6÷W'6W2æÖ‚†6÷W'6R’Óâ6÷W'6RçFW&Ò’æf–ÇFW"‚‡FW&Ò“¢FW&Ò—27G&–ærÓâ&ööÆVâ‡FW&Ò’’•Òç6÷'B‚’Â¶FFæ6÷W'6W5Ò“°Ğ¢6öç7B7W'&VçEFW&ÒÒFFæ7W'&VçE6VÖW7FW"bbFW&×2æ–æ6ÇVFW2†FFæ7W'&VçE6VÖW7FW"’òFFæ7W'&VçE6VÖW7FW"¢&ÆÂ#°Ğ¢6öç7B·6VÆV7FVEFW&ÒÂ6WE6VÆV7FVEFW&ÕÒÒW6U7FFR†7W'&VçEFW&Ò“°Ğ¢6öç7B¶VF—F–ærÂ6WDVF—F–æuÒÒW6U7FFSÅ7FvSd6÷W'6RÂçVÆÂÂVæFVf–æVCâ‡VæFVf–æVB“°Ğ¢6öç7B¶ÖW76vRÂ6WDÖW76vUÒÒW6U7FFR‚""“°Ğ¢6öç7B·VæF–ærÂ7F'EG&ç6—F–öåÒÒW6UG&ç6—F–öâ‚“°Ğ¢6öç7BÆ—7FVD6÷W'6W2ÒW6TÖVÖò‚‚’ÓâFFæ6÷W'6W0Ğ¢æf–ÇFW"‚†6÷W'6R’Óâ6÷W'6Ræ&6†—fVBÓÓÒ6†÷t&6†—fVBĞ¢æf–ÇFW"‚†6÷W'6R’Óâ6VÆV7FVEFW&ÒÓÓÒ&ÆÂ"ÇÂ6÷W'6RçFW&ÒÇÂ6÷W'6RçFW&ÒÓÓÒ6VÆV7FVEFW&ÒĞ¢æf–ÇFW"‚†6÷W'6R’ÓâG¶6÷W'6Ræ6öFWÒG¶6÷W'6RçF—FÆWÒG¶6÷W'6RçFW&Òóò"'ÖçFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡6V&6‚çFôÆ÷vW$66R‚’’’Â¶FFæ6÷W'6W2Â6V&6‚Â6VÆV7FVEFW&ÒÂ6†÷t&6†—fVEÒ“°Ğ¢6öç7B6VÆV7FVD6÷W'6RÒFFæ6÷W'6W2æf–æB‚†6÷W'6R’Óâ6÷W'6Ræ–BÓÓÒ6VÆV7FVD6÷W'6T–B’óòçVÆÃ°Ğ¢6öç7B6÷W'6TÆV7GW&W2Ò6VÆV7FVD6÷W'6RòFFæÆV7GW&W2æf–ÇFW"‚†ÆV7GW&R’ÓâÆV7GW&Ræ6÷W'6T–BÓÓÒ6VÆV7FVD6÷W'6Ræ–B’¢µÓ°Ğ Ğ¢gVæ7F–öâ'Vä7F–öâ†7F–öã¢‚’Óâ&öÖ—6SÅ7FvSd7F–öå&W7VÇCâÂ7V66W746ÆÆ&6³ó¢‚’Óâfö–B’°Ğ¢7F'EG&ç6—F–öâ†7–æ2‚’Óâ°Ğ¢6öç7B&W7VÇBÒv—B7F–öâ‚“°Ğ¢6WDÖW76vR‡&W7VÇBæW'&÷"óò&W7VÇBç7V66W72óò%WFFR6ö×ÆWFVBâ"“°Ğ¢–b‚&W7VÇBæW'&÷"’°Ğ¢7V66W746ÆÆ&6³òâ‚“°Ğ¢&÷WFW"ç&Vg&W6‚‚“°Ğ¢ĞĞ¢Ò“°Ğ¢ĞĞ Ğ¢gVæ7F–öâ7V&Ö—D6÷W'6R†WfVçC¢f÷&ÔWfVçCÄ…DÔÄf÷&ÔVÆVÖVçCâ’°Ğ¢WfVçBç&WfVçDFVfVÇB‚“°Ğ¢6öç7Bf÷&ÒÒWfVçBæ7W'&VçEF&vWC°Ğ¢'Vä7F–öâ‚‚’Óâ6fT6÷W'6R†æWrf÷&ÔFF†f÷&Ò’’Â‚’Óâ6WDVF—F–ær‡VæFVf–æVB’“°Ğ¢ĞĞ Ğ¢6öç7B6VÆV7FVEF"Ò6VÆV7FVD6÷W'6RòÄ6÷W'6TFWF–Â6÷W'6S×·6VÆV7FVD6÷W'6WÒÆV7GW&W3×¶6÷W'6TÆV7GW&W7ÒÆV7GW&TW'&÷#×¶FFæW'&÷'2æÆV7GW&W7ÒF–ÖW¦öæS×¶FFçF–ÖW¦öæWÒöä&6³×²‚’Óâöä÷Vä6÷W'6R†çVÆÂ—Òöä6GW&S×¶öä6GW&WÒóâ¢çVÆÃ°Ğ Ğ¢&WGW&âÆF—b6Æ74æÖSÒ&fFR×W#àĞ¢·6VÆV7FVEF"ò6VÆV7FVEF"¢ÃàĞ¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚Ö6öÂ§W7F–g’Ö&WGvVVâvÓB6Ó¦fÆW‚×&÷r6Ó¦—FV×2ÖVæB#àĞ¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ãVVÕÒFW‡BÕ²3s#S–S…Ò#å–÷W"6VÖW7FW#Â÷ãÆƒ6Æ74æÖSÒ&×BÓFW‡BÕ³#W…ÒföçBÖ&Æ6²G&6¶–ærÕ²Óã…ÒFW‡BÕ²3s3&EÒ6Ó§FW‡BÕ³#—…Ò#ç·6†÷t&6†—fVBò$&6†—fVB6÷W'6W2"¢$×’6÷W'6W2'ÓÂöƒãÇ6Æ74æÖSÒ&×BÓãRFW‡BÕ³'…ÒÆVF–ærÓRFW‡BÕ²3vCssƒ•Ò#ä¶VW–÷W"ÆV7GW&W2æB7GVG’v÷&²÷&væ—¦VB'’6÷W'6RãÂ÷ãÂöF—càĞ¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&—FV×2Ö6VçFW"vÓ"#ãÆÆ&VÂ6Æ74æÖSÒ'7"ÖöæÇ’"‡FÖÄf÷#Ò&6÷W'6R×FW&ÒÖf–ÇFW"#äf–ÇFW"6÷W'6W2'’FW&ÓÂöÆ&VÃãÇ6VÆV7B–CÒ&6÷W'6R×FW&ÒÖf–ÇFW""fÇVS×·6VÆV7FVEFW&×Òöä6†ævS×²†WfVçB’Óâ6WE6VÆV7FVEFW&Ò†WfVçBçF&vWBçfÇVR—Ò6Æ74æÖSÒ&‚ÓÖ‚×rÕ³ƒ…Ò&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò&r×v†—FR‚Ó2FW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3c#V#fEÒ#ãÆ÷F–öâfÇVSÒ&ÆÂ#äÆÂFW&×3Âö÷F–öãç·FW&×2æÖ‚‡FW&Ò’ÓâÆ÷F–öâ¶W“×·FW&×ÒfÇVS×·FW&×Óç·FW&×ÓÂö÷F–öãâ—ÓÂ÷6VÆV7CãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ·6WE6†÷t&6†—fVB‚‡fÇVR’ÓâfÇVR“²6WE6VÆV7FVEFW&Ò‡6†÷t&6†—fVBò7W'&VçEFW&Ò¢&ÆÂ"“²6WDÖW76vR‚""“·×Ò6Æ74æÖSÒ&‚Ó&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò&r×v†—FR‚Ó2FW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3c#V#fEÒ#ç·6†÷t&6†—fVBò%f–Wr7F—fR6÷W'6W2"¢%f–Wr&6†—fVB'ÓÂö'WGFöãç²6†÷t&6†—fVBbbÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WDVF—F–ær†çVÆÂ—Ò6Æ74æÖSÒ&–æÆ–æRÖfÆW‚‚Ó—FV×2Ö6VçFW"vÓ"&÷VæFVB×†Â&rÕ²3s#S–S…Ò‚ÓBFW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡B×v†—FR#ãÅÇW26Æ74æÖSÒ'6—¦RÓB"óâFB6÷W'6SÂö'WGFöãçÓÂöF—càĞ¢ÂöF—càĞ¢¶ÖW76vRbbÇ&öÆSÒ'7FGW2"6Æ74æÖS×¶×BÓB&÷VæFVB×†Â‚ÓB’Ó2FW‡B×‡2föçB×6VÖ–&öÆBG¶ÖW76vRæ–æ6ÇVFW2‚&6÷VÆFî(	—B"’ÇÂÖW76vRæ–æ6ÇVFW2‚&æòÆöævW""’ÇÂÖW76vRæ–æ6ÇVFW2‚&6÷VÆBæ÷B"’ò&&rÕ²6ffcVeÒFW‡BÕ²6CFSC…Ò"¢&&rÕ²6cVffeÒFW‡BÕ²3V#Cv&EÒ'ÖÓç¶ÖW76vWÓÂ÷çĞĞ¢ÆF—b6Æ74æÖSÒ&×BÓR#àĞ¢¶FFæW'&÷'2æ6÷W'6W2òÅ6V7F–öäW'&÷#ä6÷W'6W26÷VÆBæ÷B&RÆöFVBâ6†V6²F†BF†R7FvRBÖ–w&F–öâ—2Æ–VBÂF†Vâ&Vg&W6‚ãÂõ6V7F–öäW'&÷#â¢Æ—7FVD6÷W'6W2æÆVæwF‚òÆF—b6Æ74æÖSÒ&w&–BvÓ26Ó¦w&–BÖ6öÇ2Ó"†Ã¦w&–BÖ6öÇ2Ó2#ç¶Æ—7FVD6÷W'6W2æÖ‚†6÷W'6R’ÓâÆ'F–6ÆR¶W“×¶6÷W'6Ræ–GÒ6Æ74æÖSÒ'&÷VæFVBÕ³#'…Ò&÷&FW"&÷&FW"Õ²6S–SVVeÒ&r×v†—FRÓB6Ó§ÓR#ãÆF—b6Æ74æÖSÒ&fÆW‚—FV×2×7F'B§W7F–g’Ö&WGvVVâvÓ2#ãÇ7â6Æ74æÖSÒ&w&–B6—¦RÓÆ6RÖ—FV×2Ö6VçFW"&÷VæFVBÓ'†ÂFW‡B×6ÒföçBÖ&Æ6²"7G–ÆS×·²6öÆ÷#¢6÷W'6Ræ6öÆ÷"Â&6¶w&÷VæD6öÆ÷#¢G¶6÷W'6Ræ6öÆ÷'Ó†×ÓãÄ&öö´÷Vâ6Æ74æÖSÒ'6—¦RÓR"óãÂ÷7ããÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ#ãÆ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃ×¶VF—BG¶6÷W'6RçF—FÆWÖÒöä6Æ–6³×²‚’Óâ6WDVF—F–ær†6÷W'6R—Ò6Æ74æÖSÒ&w&–B6—¦RÓ‚Æ6RÖ—FV×2Ö6VçFW"&÷VæFVBÖÆrFW‡BÕ²3ƒSƒ†EÒ†÷fW#¦&rÕ²6c6cfeÒ†÷fW#§FW‡BÕ²3s#S–S…Ò#ãÅVæ6–Â6Æ74æÖSÒ'6—¦RÓ2ãR"óãÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃ×·6†÷t&6†—fVBò&W7F÷&RG¶6÷W'6RçF—FÆWÖ¢&6†—fRG¶6÷W'6RçF—FÆWÖÒöä6Æ–6³×²‚’Óâ'Vä7F–öâ‚‚’Óâ6WD6÷W'6T&6†—fVB†6÷W'6Ræ–BÂ6†÷t&6†—fVB’—Ò6Æ74æÖSÒ&w&–B6—¦RÓ‚Æ6RÖ—FV×2Ö6VçFW"&÷VæFVBÖÆrFW‡BÕ²3ƒSƒ†EÒ†÷fW#¦&rÕ²6c6cfeÒ†÷fW#§FW‡BÕ²3s#S–S…Ò#ãÄ&6†—fR6Æ74æÖSÒ'6—¦RÓ2ãR"óãÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃ×¶&VÖ÷fRG¶6÷W'6RçF—FÆWÖÒöä6Æ–6³×²‚’Óâ²–b‡v–æF÷ræ6öæf—&Ò†&VÖ÷fRG¶6÷W'6Ræ6öFWÒg&öÒ–÷W"6÷W'6RÆ—7Cò—G2ÆV7GW&W2v–ÆÂ&VÖ–â–â–÷W"66÷VçBæ’’'Vä7F–öâ‚‚’Óâ&VÖ÷fT6÷W'6R†6÷W'6Ræ–B’“²×Ò6Æ74æÖSÒ&w&–B6—¦RÓ‚Æ6RÖ—FV×2Ö6VçFW"&÷VæFVBÖÆrFW‡BÕ²3ƒSƒ†EÒ†÷fW#¦&rÕ²6ffcVeÒ†÷fW#§FW‡BÕ²6CFSC…Ò#ãÅG&6ƒ"6Æ74æÖSÒ'6—¦RÓ2ãR"óãÂö'WGFöããÂöF—cãÂöF—cãÇ6Æ74æÖSÒ&×BÓBFW‡BÕ³…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ãVÕÒFW‡BÕ²3ƒSƒ†EÒ#ç¶6÷W'6Ræ6öFW×¶6÷W'6RçFW&Òò+rG¶6÷W'6RçFW&×Ö¢"'ÓÂ÷ãÆƒ"6Æ74æÖSÒ&×BÓG'Væ6FRFW‡BÖ&6RföçBÖW‡G&&öÆB#ç¶6÷W'6RçF—FÆWÓÂöƒ#ãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâöä÷Vä6÷W'6R†6÷W'6Ræ–B—Ò6Æ74æÖSÒ&×BÓB–æÆ–æRÖfÆW‚—FV×2Ö6VçFW"vÓãRFW‡BÕ³…ÒföçBÖW‡G&&öÆBFW‡BÕ²3s#S–S…Ò#ä÷Vâ6÷W'6RÄ'&÷u&–v‡B6Æ74æÖSÒ'6—¦RÓ2ãR"óãÂö'WGFöããÂö'F–6ÆSâ—ÓÂöF—câ¢6V&6‚òÄV×G•7FFRF—FÆS×¶æò6÷W'6W2ÖF6‚(	ÂG·6V&6‡Ş(	ÖÒ6÷“Ò%G'’F–ffW&VçB6öFRÂF—FÆRÂ÷"FW&Òâ"óâ¢6†÷t&6†—fVBòÄV×G•7FFRF—FÆSÒ$æò&6†—fVB6÷W'6W2"6÷“Ò$6÷W'6W2–÷R&6†—fRv–ÆÂ&RÆ—7FVB†W&RÂ&VG’Fò&W7F÷&RÆFW"â"óâ¢ÄV×G•7FFRF—FÆSÒ%–÷W"6÷W'6RÆ—7B—2V×G’"6÷“Ò$FB–÷W"f—'7B6÷W'6RFò÷&væ—¦RÆV7GW&W2ÂF6·2ÂæB7GVG’v÷&²â"7F–öã×³Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WDVF—F–ær†çVÆÂ—Ò6Æ74æÖSÒ&–æÆ–æRÖfÆW‚—FV×2Ö6VçFW"vÓ"&÷VæFVB×†Â&rÕ²3s#S–S…Ò‚ÓB’Ó"ãRFW‡B×‡2föçBÖW‡G&&öÆBFW‡B×v†—FR#ãÅÇW26Æ74æÖSÒ'6—¦RÓB"óâFB–÷W"f—'7B6÷W'6SÂö'WGFöãçÒóçĞĞ¢ÂöF—càĞ¢ÂóçĞĞ Ğ¢¶VF—F–ærÓÒVæFVf–æVBbbÆF—b6Æ74æÖSÒ&f—†VB–ç6WBÓ¢Õ³“Òw&–BÆ6RÖ—FV×2Ö6VçFW"&rÕ²3s3&EÒóCRÓB&6¶G&÷Ö&ÇW"×6Ò#ãÇ6V7F–öâ&öÆSÒ&F–Æör"&–ÖÖöFÃÒ'G'VR"&–ÖÆ&VÆÆVF'“Ò&6÷W'6RÖF–Æör×F—FÆR"6Æ74æÖSÒ'rÖgVÆÂÖ‚×rÕ³CC…Ò&÷VæFVBÕ³#G…Ò&r×v†—FRÓR6†F÷rÓ'†Â6Ó§Ób#ãÆF—b6Æ74æÖSÒ&fÆW‚—FV×2×7F'B§W7F–g’Ö&WGvVVâvÓB#ãÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³—…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ²ãFVÕÒFW‡BÕ²3s#S–S…Ò#ç¶VF—F–ærò$6÷W'6RFWF–Ç2"¢$'V–ÆB–÷W"6÷W'6RÆ—7B'ÓÂ÷ãÆƒ"–CÒ&6÷W'6RÖF–Æör×F—FÆR"6Æ74æÖSÒ&×BÓFW‡B×†ÂföçBÖ&Æ6²#ç¶VF—F–ærò$VF—B6÷W'6R"¢$FB6÷W'6R'ÓÂöƒ#ãÂöF—cãÆ'WGFöâG—SÒ&'WGFöâ"&–ÖÆ&VÃÒ$6Æ÷6R"öä6Æ–6³×²‚’Óâ6WDVF—F–ær‡VæFVf–æVB—Ò6Æ74æÖSÒ&w&–B6—¦RÓ‚Æ6RÖ—FV×2Ö6VçFW"&÷VæFVBÖÆr&rÕ²6cFc&cuÒ#ãÅ‚6Æ74æÖSÒ'6—¦RÓB"óãÂö'WGFöããÂöF—cãÆf÷&Òöå7V&Ö—C×·7V&Ö—D6÷W'6WÒ6Æ74æÖSÒ&×BÓR76R×’Ó2#ãÆ–çWBG—SÒ&†–FFVâ"æÖSÒ&–B"fÇVS×¶VF—F–æsòæ–Bóò"'ÒóãÆÆ&VÂ6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖ&öÆB#ä6÷W'6R6öFSÆ–çWBæÖSÒ&6öFR"&WV—&VBÖ„ÆVæwFƒ×³3ÒFVfVÇEfÇVS×¶VF—F–æsòæ6öFRóò"'Ò6Æ74æÖSÒ&×BÓãR‚ÓrÖgVÆÂ&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò‚Ó2FW‡B×6Ò÷WFÆ–æRÖæöæRfö7W3¦&÷&FW"Õ²6“–VEÒ"Æ6V†öÆFW#Ò&Rærâ$”ò#""óãÂöÆ&VÃãÆÆ&VÂ6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖ&öÆB#ä6÷W'6RF—FÆSÆ–çWBæÖSÒ'F—FÆR"&WV—&VBÖ–äÆVæwFƒ×³'ÒÖ„ÆVæwFƒ×³#ÒFVfVÇEfÇVS×¶VF—F–æsòçF—FÆRóò"'Ò6Æ74æÖSÒ&×BÓãR‚ÓrÖgVÆÂ&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò‚Ó2FW‡B×6Ò÷WFÆ–æRÖæöæRfö7W3¦&÷&FW"Õ²6“–VEÒ"Æ6V†öÆFW#Ò&Rærâ6VÆÂ&–öÆöw’"óãÂöÆ&VÃãÆÆ&VÂ6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖ&öÆB#åFW&Ò÷"6VÖW7FW"†÷F–öæÂ“Æ–çWBæÖSÒ'FW&Ò"Ö„ÆVæwFƒ×³ƒÒFVfVÇEfÇVS×¶VF—F–æsòçFW&Òóò"'Ò6Æ74æÖSÒ&×BÓãR‚ÓrÖgVÆÂ&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò‚Ó2FW‡B×6Ò÷WFÆ–æRÖæöæRfö7W3¦&÷&FW"Õ²6“–VEÒ"Æ6V†öÆFW#Ò&RærâfÆÂ##b"óãÂöÆ&VÃãÆÆ&VÂ6Æ74æÖSÒ&&Æö6²FW‡B×‡2föçBÖ&öÆB#ä6÷W'6R6öÆ÷#Æ–çWBæÖSÒ&6öÆ÷""G—SÒ&6öÆ÷""FVfVÇEfÇVS×¶VF—F–æsòæ6öÆ÷"óò"3s#S–S‚'Ò6Æ74æÖSÒ&×BÓãR‚ÓrÖgVÆÂ&÷VæFVB×†Â&÷&FW"&÷&FW"Õ²6SVSV%Ò&r×v†—FR‚Ó""óãÂöÆ&VÃç¶ÖW76vRbbÇ&öÆSÒ'7FGW2"6Æ74æÖSÒ'FW‡B×‡2föçB×6VÖ–&öÆBFW‡BÕ²6CFSC…Ò#ç¶ÖW76vWÓÂ÷çÓÆF—b6Æ74æÖSÒ&fÆW‚§W7F–g’ÖVæBvÓ"BÓ"#ãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WDVF—F–ær‡VæFVf–æVB—Ò6Æ74æÖSÒ&‚Ó&÷VæFVB×†Â‚ÓBFW‡B×‡2föçBÖ&öÆBFW‡BÕ²3sssƒÒ#ä6æ6VÃÂö'WGFöããÆ'WGFöâG—SÒ'7V&Ö—B"F—6&ÆVC×·VæF–æwÒ6Æ74æÖSÒ&–æÆ–æRÖfÆW‚‚Ó—FV×2Ö6VçFW"vÓ"&÷VæFVB×†Â&rÕ²3s#S–S…Ò‚ÓBFW‡B×‡2föçBÖW‡G&&öÆBFW‡B×v†—FRF—6&ÆVC¦÷6—G’Óc#ç·VæF–ærbbÄÆöFW$6—&6ÆR6Æ74æÖSÒ'6—¦RÓ2ãRæ–ÖFR×7–â"óç×¶VF—F–ærò%6fR6†ævW2"¢$FB6÷W'6R'ÓÂö'WGFöããÂöF—cãÂöf÷&ÓãÂ÷6V7F–öããÂöF—cçĞĞ¢ÂöF—cã°Ğ§ĞĞ Ğ§G—RÆV7GW&TFWF–ÂÒ7FvSdÆV7GW&Rb°Ğ¢6÷W&6UG—S¢7G&–æs°Ğ¢Ö–ÖUG—S¢7G&–ærÂçVÆÃ°Ğ¢G&ç67&—C¢7G&–ærÂçVÆÃ°Ğ¢&ö6W76–ætW'&÷#¢7G&–ærÂçVÆÃ°Ğ¢WFFVDC¢7G&–æs°Ğ¢ÖVF–W&Ãó¢7G&–ærÂçVÆÃ°Ğ¢æ÷FSó¢÷&væ—¦VDæ÷FTFFÂçVÆÃ°Ğ§Ó°Ğ Ğ¦W‡÷'BgVæ7F–öâf÷&ÖDæ÷FTÖ&¶F÷vâ†æ÷FS¢÷&væ—¦VDæ÷FTFFÂÆV7GW&UF—FÆS¢7G&–ærÂ6÷W'6TæÖSó¢7G&–ær’°Ğ¢ÆWBÖBÒ2G¶æ÷FRçF—FÆRÇÂÆV7GW&UF—FÆWÕÆåÆæ°Ğ¢–b†6÷W'6TæÖR’ÖB³Ò¢¤6÷W'6R¢£¢G¶6÷W'6TæÖWÕÆåÆæ°Ğ¢ÖB³Ò22W†V7WF—fR7VÖÖ'•ÆâG¶æ÷FRç7VÖÖ'—ÕÆåÆæ°Ğ Ğ¢6öç7BFW&×2Òæ÷FRæ6öçFVçCòæ¶W•FW&×2óòµÓ°Ğ¢–b‡FW&×2æÆVæwF‚â’°Ğ¢ÖB³Ò22¶W’6öæ6WG2bfö6'VÆ'•Ææ°Ğ¢f÷"†6öç7BBöbFW&×2’°Ğ¢ÖB³ÒÒ¢¢G·BçFW&×Ò¢£¢G·BæFVf–æ—F–öçÕÆæ°Ğ¢ĞĞ¢ÖB³ÒÆæ°Ğ¢ĞĞ Ğ¢6öç7B6V7F–öç2Òæ÷FRæ6öçFVçCòç6V7F–öç2óòµÓ°Ğ¢–b‡6V7F–öç2æÆVæwF‚â’°Ğ¢ÖB³Ò22ÆV7GW&R'&V¶F÷~4×kh‘éì¶»§q«^tİ\™J]]ÓÜ[“Xİ\™RY
+NÃBˆKØ]]ÓÜ[“Xİ\™RYXİ\™\ËÛ]]ÓÜ[‹Ü[“Xİ\™WJNÃBƒBˆËÈ]]Ë[Ü[ˆH[Üİ™XÙ[™XYHXİ\™HÛ˜ÙHÚ[ˆHİY[È[İ[ÈÚ]]KƒBˆÛÛœİY]]ÓÜ[”™YˆH\ÙT™YŠ˜[ÙJNÃBˆ\ÙQY™™Xİ
+
+
+HOˆÃBˆYˆ
+Y]]ÓÜ[”™Y‹˜İ\œ™[Ù[XİY\ŞH]]ÓÜ[“Xİ\™RY[Xİ\™\Ë›[™İ
+H™]\›ÃBˆÛÛœİš\œİ™XYHHË‹‹›Xİ\™\×CBˆœÛÜ
+
+KŠHOˆ™]È]J‹˜Ü™X]Y]
+K™Ù][YJ
+HH™]È]JK˜Ü™X]Y]
+K™Ù][YJ
+JCBˆ™š[™
+
+Xİ\™JHOˆXİ\™Kœİ]\ÈOOHœ™XYHŠNÃBˆYˆ
+š\œİ™XYJHÃBˆY]]ÓÜ[”™Y‹˜İ\œ™[HYNÃBˆ›ÚYÜ[“Xİ\™Jš\œİ™XYKšY
+NÃBˆCBˆKØ]]ÓÜ[“Xİ\™RY\ŞKXİ\™\ËÜ[“Xİ\™KÙ[XİYJNÃBƒBˆ\Ş[˜È[˜İ[ÛˆØ]™U˜[œØÜš\
+
+HÃBˆYˆ
+\Ù[XİY
+H™]\›ÃBˆÙ]\ŞJYJNÃBˆÙ]\œ›ÜŠˆŠNÃBˆÙ]›İXÙJˆŠNÃBˆHÃBˆÛÛœİ™\ÜÛœÙHH]ØZ]™]Ú
+Ø\KÛXİ\™\ËÉÜÙ[XİYšYXÃBˆY]Ùˆ”UÒ‹BˆXY\œÎˆÈÛÛ[U\Hˆ˜\XØ][Û‹ÚœÛÛˆˆKBˆ›ÙNˆ”ÓÓ‹œİš[™ÚYJÈ˜[œØÜš\ˆ˜[œØÜš\˜YJKBˆJNÃBˆÛÛœİ›ÙHH]ØZ]™\ÜÛœÙKšœÛÛŠ
+H\ÈÈ\œ›ÜÎˆİš[™ÈNÃBˆYˆ
+\™\ÜÛœÙK›ÚÊH›İÈ™]È\œ›ÜŠ›ÙK™\œ›Üˆ•˜[œØÜš\Ûİ[›İ™HØ]™YˆŠNÃBˆÙ]Ù[XİY
+È‹‹œÙ[XİY˜[œØÜš\ˆ˜[œØÜš\˜YJNÃBˆÙ]\J˜[ÙJNÃBˆÙ]›İXÙJ•˜[œØÜš\Ø]™YˆŠNÃBˆÛ•Ø\İËŠ•˜[œØÜš\Ø]™Yˆ‹œİXØÙ\ÜÈŠNÃBˆ›İ]\‹œ™Yœ™\Ú
+
+NÃBˆHØ]Ú
+Ø]\ÙJHÃBˆÛÛœİY\ÜØYÙHHØ]\ÙH[œİ[˜Ù[Ùˆ\œ›ÜˆÈØ]\ÙK›Y\ÜØYÙHˆ•˜[œØÜš\Ûİ[›İ™HØ]™YˆÃBˆÙ]\œ›ÜŠY\ÜØYÙJNÃBˆÛ•Ø\İËŠY\ÜØYÙK™\œ›ÜˆŠNÃBˆHš[˜[HÃBˆÙ]\ŞJ˜[ÙJNÃBˆCBˆCBƒBˆ\Ş[˜È[˜İ[ÛˆÙ[™\˜]S›İ\Ê
+HÃBˆYˆ
+\Ù[XİY
+H™]\›ÃBˆÙ]Ù[™\˜][™Ó›İ\ÊYJNÃBˆÙ]\œ›ÜŠˆŠNÃBˆÙ]›İXÙJˆŠNÃBˆHÃBˆÛÛœİ™\ÜÛœÙHH]ØZ]™]Ú
+Ø\KÛXİ\™\ËÉÜÙ[XİYšYKÛ›İ\ØÃBˆY]Ùˆ”ÔÕ‹BˆJNÃBˆÛÛœİ›ÙHH
+]ØZ]™\ÜÛœÙKšœÛÛŠ
+JH\ÈÈ›İOÎˆÜ™Ø[š^™Y›İQ]NÈ\œ›ÜÎˆİš[™ÎÈY\ÜØYÙOÎˆİš[™ÈNÃBˆYˆ
+\™\ÜÛœÙK›ÚÈX›ÙK››İJH›İÈ™]È\œ›ÜŠ›ÙK™\œ›ÜˆÛİ[›İÙ[™\˜]HÜ™Ø[š^™Y›İ\ËˆŠNÃBˆÙ]Ù[XİY
+È‹‹œÙ[XİY›İNˆ›ÙK››İHJNÃBˆÙ]İY[ÕXŠ››İ\ÈŠNÃBˆÛÛœİİXØÙ\ÜÓY\ÜØYÙHH›ÙK›Y\ÜØYÙH“Ü™Ø[š^™YİYH›İ\ÈÙ[™\˜]YİXØÙ\ÜÙ[HHÃBˆÙ]›İXÙJİXØÙ\ÜÓY\ÜØYÙJNÃBˆÛ•Ø\İËŠİXØÙ\ÜÓY\ÜØYÙKœİXØÙ\ÜÈŠNÃBˆ›İ]\‹œ™Yœ™\Ú
+
+NÃBˆHØ]Ú
+Ø]\ÙJHÃBˆÛÛœİY\ÜØYÙHHØ]\ÙH[œİ[˜Ù[Ùˆ\œ›ÜˆÈØ]\ÙK›Y\ÜØYÙHˆ“›İHÙ[™\˜][Ûˆ˜Z[YˆÃBˆÙ]\œ›ÜŠY\ÜØYÙJNÃBˆÛ•Ø\İËŠY\ÜØYÙK™\œ›ÜˆŠNÃBˆHš[˜[HÃBˆÙ]Ù[™\˜][™Ó›İ\Ê˜[ÙJNÃBˆCBˆCBƒBˆ\Ş[˜È[˜İ[Ûˆ™]SXİ\™JYˆİš[™ÊHÃBˆÙ]\ŞJYJNÃBˆÙ]\œ›ÜŠˆŠNÃBˆÙ]›İXÙJˆŠNÃBˆHÃBˆÛÛœİ™\ÜÛœÙHH]ØZ]™]Ú
+‹Ø\Kİ˜[œØÜšX™H‹ÃBˆY]Ùˆ”ÔÕ‹BˆXY\œÎˆÈÛÛ[U\Hˆ˜\XØ][Û‹ÚœÛÛˆˆKBˆ›ÙNˆ”ÓÓ‹œİš[™ÚYJÈXİ\™RYˆYJKBˆJNÃBˆÛÛœİ›ÙHH]ØZ]™\ÜÛœÙKšœÛÛŠ
+H\ÈÈ\œ›ÜÎˆİš[™ÈNÃBˆYˆ
+\™\ÜÛœÙK›ÚÊH›İÈ™]È\œ›ÜŠ›ÙK™\œ›Üˆ“Xİ\™H›ØÙ\ÜÚ[™ÈÛİ[›İİ\ˆŠNÃBˆ]ØZ]Ü[“Xİ\™JY
+NÃBˆ›İ]\‹œ™Yœ™\Ú
+
+NÃBˆHØ]Ú
+Ø]\ÙJHÃBˆÙ]\œ›ÜŠØ]\ÙH[œİ[˜Ù[Ùˆ\œ›ÜˆÈØ]\ÙK›Y\ÜØYÙHˆ“Xİ\™H›ØÙ\ÜÚ[™ÈÛİ[›İİ\ˆŠNÃBˆ›İ]\‹œ™Yœ™\Ú
+
+NÃBˆHš[˜[HÃBˆÙ]\ŞJ˜[ÙJNÃBˆCBˆCBƒBˆ\Ş[˜È[˜İ[Ûˆ[]SXİ\™JXİ\™NˆİYÙM“Xİ\™JHÃBˆYˆ
+]Ú[™İË˜ÛÛ™š\›J[]H‰ÛXİ\™K]_Hˆ[™]È˜[œØÜš\È\È[ÛÈ[]\È]È\š]™Y›İ\È[™İYHX]\šX[Ë˜
+JH™]\›ÃBˆÙ]\ŞJYJNÃBˆÙ]\œ›ÜŠˆŠNÃBˆÙ]›İXÙJˆŠNÃBˆHÃBˆÛÛœİ™\ÜÛœÙHH]ØZ]™]Ú
+Ø\KÛXİ\™\ËÉÛXİ\™KšYXÈY]Ùˆ‘SUHˆJNÃBˆÛÛœİ›ÙHH]ØZ]™\ÜÛœÙKšœÛÛŠ
+H\ÈÈ\œ›ÜÎˆİš[™ÈNÃBˆYˆ
+\™\ÜÛœÙK›ÚÊH›İÈ™]È\œ›ÜŠ›ÙK™\œ›Üˆ“Xİ\™HÛİ[›İ™H[]YˆŠNÃBˆYˆ
+Ù[XİYËšYOOHXİ\™KšY
+HÃBˆÙ]Ù[XİY
+[
+NÃBˆÙ]˜[œØÜš\˜Y
+ˆŠNÃBˆCBˆÙ]›İXÙJ“Xİ\™H[™\ÜÛØÚX]YİYHÛÛ[[]YˆŠNÃBˆÛ•Ø\İËŠ“Xİ\™H[]Yˆ‹œİXØÙ\ÜÈŠNÃBˆ›İ]\‹œ™Yœ™\Ú
+
+NÃBˆHØ]Ú
+Ø]\ÙJHÃBˆÙ]\œ›ÜŠØ]\ÙH[œİ[˜Ù[Ùˆ\œ›ÜˆÈØ]\ÙK›Y\ÜØYÙHˆ“Xİ\™HÛİ[›İ™H[]YˆŠNÃBˆHš[˜[HÃBˆÙ]\ŞJ˜[ÙJNÃBˆCBˆCBƒBˆ[˜İ[ÛˆÛÜU˜[œØÜš\
+
+HÃBˆYˆ
+\Ù[XİYË˜[œØÜš\
+H™]\›ÃBˆ›ÚY˜]šYØ]Ü‹˜Û\›Ø\™Üš]U^
+˜[œØÜš\˜Y
+K[ŠBˆ
+
+HOˆÃBˆÙ]›İXÙJ•˜[œØÜš\ÛÜYYˆŠNÃBˆÛ•Ø\İËŠ•˜[œØÜš\ÛÜYYˆ‹œİXØÙ\ÜÈŠNÃBˆKBˆ
+
+HOˆÃBˆÙ]\œ›ÜŠÛ\›Ø\™XØÙ\ÜÈØ\È[˜]˜Z[X›KˆÙ[Xİ[™ÛÜHH˜[œØÜš\X[X[KˆŠNÃBˆÛ•Ø\İËŠÛ\›Ø\™XØÙ\ÜÈØ\È[˜]˜Z[X›Kˆ‹™\œ›ÜˆŠNÃBˆKBˆ
+NÃBˆCBƒBˆ[˜İ[ÛˆİÛ›ØY˜[œØÜš\
+
+HÃBˆYˆ
+\Ù[XİY
+H™]\›ÃBˆÛÛœİ›ØˆH™]È›ØŠİ˜[œØÜš\˜YKÈ\Nˆ^ÜZ[ØÚ\œÙ]]]‹NˆJNÃBˆÛÛœİ\›HT“˜Ü™X]SØš™XİT“
+›ØŠNÃBˆÛÛœİ[šÈHØİ[Y[˜Ü™X]Q[[Y[
+˜HŠNÃBˆ[šËš™YˆH\›ÃBˆ[šË™İÛ›ØYH	ÜÙ[XİY]Kœ™\XÙJÖ×—Ë‹WJËÙË‹HŠKœÛXÙJ
+H›Xİ\™HŸK]˜[œØÜš\ÃBˆ[šË˜ÛXÚÊ
+NÃBˆT“œ™]›ÚÙSØš™XİT“
+\›
+NÃBˆCBƒBˆ[˜İ[ÛˆÛÜS›İSX\šÙİÛXİ[ÛŠ
+HÃBˆYˆ
+\Ù[XİYË››İJH™]\›ÃBˆÛÛœİÛİ\œÙS˜[YHHÙ[XİY˜Ûİ\œÙRYÈÛİ\œÙS˜[Y\Ë™Ù]
+Ù[XİY˜Ûİ\œÙRY
+Hˆ[™Yš[™YÃBˆÛÛœİYH›Ü›X]›İSX\šÙİÛŠÙ[XİY››İKÙ[XİY]KÛİ\œÙS˜[YJNÃBˆ›ÚY˜]šYØ]Ü‹˜Û\›Ø\™Üš]U^
+Y
+K[ŠBˆ
+
+HOˆÃBˆÙ]›İXÙJ“Ü™Ø[š^™YİYH›İ\ÈÛÜYY\ÈX\šÙİÛˆHŠNÃBˆÛ•Ø\İËŠ“›İ\ÈÛÜYY\ÈX\šÙİÛ‹ˆ‹œİXØÙ\ÜÈŠNÃBˆKBˆ
+
+HOˆÃBˆÙ]\œ›ÜŠÛ\›Ø\™XØÙ\ÜÈ[˜]˜Z[X›KˆŠNÃBˆÛ•Ø\İËŠÛ\›Ø\™XØÙ\ÜÈ[˜]˜Z[X›Kˆ‹™\œ›ÜˆŠNÃBˆCBˆ
+NÃBˆCBƒBˆ[˜İ[Ûˆ^Ü›İTXİ[ÛŠ
+HÃBˆYˆ
+\Ù[XİYË››İJH™]\›ÃBˆÛÛœİÛİ\œÙS˜[YHHÙ[XİY˜Ûİ\œÙRYÈÛİ\œÙS˜[Y\Ë™Ù]
+Ù[XİY˜Ûİ\œÙRY
+Hˆ[™Yš[™YÃBˆHÃBˆ^Ü›İUÔŠÙ[XİY››İKÙ[XİY]KÛİ\œÙS˜[YJNÃBˆÙ]›İXÙJ“Ü™Ø[š^™YİYHİZYHˆİÛ›ØYYHŠNÃBˆÛ•Ø\İËŠ”İYHİZYHˆİÛ›ØYYˆ‹œİXØÙ\ÜÈŠNÃBˆÛ•Ø\İËŠ”İYHİZYHˆİÛ›ØYYˆ‹œİXØÙ\ÜÈŠNÃBˆHØ]Ú
+\œŠHÃBˆÙ]\œ›ÜŠ\œˆ[œİ[˜Ù[Ùˆ\œ›ÜˆÈ\œ‹›Y\ÜØYÙHˆ‘˜Z[YÈÙ[™\˜]H‹ˆŠNÃBˆCBˆCBƒBˆ[˜İ[ÛˆİÛ›ØY›İSX\šÙİÛXİ[ÛŠ
+HÃBˆYˆ
+\Ù[XİYË››İJH™]\›ÃBˆÛÛœİÛİ\œÙS˜[YHHÙ[XİY˜Ûİ\œÙRYÈÛİ\œÙS˜[Y\Ë™Ù]
+Ù[XİY˜Ûİ\œÙRY
+Hˆ[™Yš[™YÃBˆÛÛœİYH›Ü›X]›İSX\šÙİÛŠÙ[XİY››İKÙ[XİY]KÛİ\œÙS˜[YJNÃBˆÛÛœİ›ØˆH™]È›ØŠÛYKÈ\Nˆ^ÛX\šÙİÛØÚ\œÙ]]]‹NˆJNÃBˆÛÛœİ\›HT“˜Ü™X]SØš™XİT“
+›ØŠNÃBˆÛÛœİ[šÈHØİ[Y[˜Ü™X]Q[[Y[
+˜HŠNÃBˆ[šËš™YˆH\›ÃBˆ[šË™İÛ›ØYH	ÜÙ[XİY]Kœ™\XÙJÖ×—Ë‹WJËÙË‹HŠKœÛXÙJ
+H›Xİ\™HŸK\İYK[›İ\Ë›YÃBˆ[šË˜ÛXÚÊ
+NÃBˆT“œ™]›ÚÙSØš™XİT“
+\›
+NÃBˆCBƒBˆÛÛœİÛÜYXİ\™\ÈH\ÙSY[[Ê
+
+HOˆË‹‹›Xİ\™\×KœÛÜ
+
+KŠHOˆ™]È]J‹˜Ü™X]Y]
+K™Ù][YJ
+HH™]È]JK˜Ü™X]Y]
+K™Ù][YJ
+JKÛXİ\™\×JNÃBƒBˆ™]\›ˆ]ˆÛ\ÜÓ˜[YOH™˜YK]\ƒBˆ]ˆÛ\ÜÓ˜[YOH™›^›^XÛÛ\İYKX™]ÙY[ˆØ\MÛN™›^\›İÈÛNš][\ËY[™ƒBˆ]Û\ÜÓ˜[YOH^VÌLH›ÛX›XÚÈ\\˜Ø\ÙH˜XÚÚ[™ËVËŒMY[WH^VÈÍÌNYNH“Xİ\™HİY[ÏÜHÛ\ÜÓ˜[YOH›]LH^VÌ\H›ÛX›XÚÈ˜XÚÚ[™ËVËLKŒ\H^VÈÌMÌLÌ™HÛN^VÌ\H–[İ\ˆXİ\™HXœ˜\OÚOÛ\ÜÓ˜[YOH›]LKHX^]ËL^VÌLœHXY[™ËMH^VÈÍÙÍÎWH•\ØY]]Üš^™Y]Y[ÈÜˆšY[È™XÛÜ™[™ÜËÜˆXİ\™HØİ[Y[È
+‹ÛÜ™^
+KˆÛÛ[\È\œÙY[™Ü™Ø[š^™Y[ÈÛÛ\™Z[œÚ]™HİYH›İ\ÈÚ]RKÜÙ]ƒBˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^ÛÛ•\ØYHÛ\ÜÓ˜[YOHš[›[™KY›^LL][\ËXÙ[\ˆ\İYKXÙ[\ˆØ\LˆÙ[‹\İ\›İ[™Y^™ËVÈÍÌNYNHM^VÌL\H›ÛY^˜X›Û^]Ú]HÛNœÙ[‹X]]È\ØYÛ\ÜÓ˜[YOHœÚ^™KMˆÏˆYHXİ\™OØ]ÛƒBˆÙ]ƒBˆ]ˆÛ\ÜÓ˜[YOH›]MHÜšYØ\MH™ÜšYXÛÛËVËÌ™œ—ÌKŒœ—HƒBˆÙXİ[ÛˆÛ\ÜÓ˜[YOHœ›İ[™YVÌH›Ü™\ˆ›Ü™\‹VÈÙNYMYY—H™Ë]Ú]HMÛNœMHƒBˆ]ˆÛ\ÜÓ˜[YOH›X‹M›^][\ËXÙ[\ˆ\İYKX™]ÙY[ˆˆÛ\ÜÓ˜[YOH^\ÛH›ÛY^˜X›Û”™XÙ[Xİ\™\ÏÚÜ[ˆÛ\ÜÓ˜[YOH^VÌLH^VÈÎNMHÜÛÜYXİ\™\Ë›[™İOÜÜ[Ù]ƒBˆÛØY\œ›ÜˆÈÙXİ[Û‘\œ›Ü“Xİ\™H\İÜHÛİ[›İ™HØYYˆÚXÚÈHİYÙHZYÜ˜][Ûˆ[™™Yœ™\ÚÔÙXİ[Û‘\œ›ÜˆˆÛÜYXİ\™\Ë›[™İÈ[Û\ÜÓ˜[YOHœÜXÙK^KLˆÜÛÜYXİ\™\Ë›X\
+
+Xİ\™JHOˆÃBˆÛÛœİ\ĞXİ]™HHÙ[XİYËšYOOHXİ\™KšYÃBˆ™]\›ˆ
+BˆHÙ^O^ÛXİ\™KšYOƒBˆ]ƒBˆ›ÛOH˜]ÛˆƒBˆX’[™^^ÌCBˆÛÛXÚÏ^Ê
+HOˆ›ÚYÜ[“Xİ\™JXİ\™KšY
+_CBˆÛ’Ù^QİÛ^Ê]™[
+HOˆÃBˆYˆ
+]™[šÙ^HOOH‘[\ˆˆ]™[šÙ^HOOHˆŠHÃBˆ]™[œ™]™[Y˜][
+
+NÃBˆ›ÚYÜ[“Xİ\™JXİ\™KšY
+NÃBˆCBˆ_CBˆÛ\ÜÓ˜[YO^Ø›^İ\œÛÜ‹\Ú[\ˆ][\ËXÙ[\ˆØ\Lˆ›İ[™YL›Ü™\ˆLÈ˜[œÚ][Ûˆ	Ú\ĞXİ]™HÈ˜›Ü™\‹VÈØÎ˜ÙŒ—H™ËVÈÙ™™—HÚYİË\ÛHˆˆ˜›Ü™\‹VÈÙŒYHİ™\˜›Ü™\‹VÈÙYWHİ™\˜™ËVÈÙ˜™˜Y™—HŸXCBˆƒBˆ]ˆÛ\ÜÓ˜[YOH›Z[‹]ËL›^LH^[YƒBˆÜ[ˆÛ\ÜÓ˜[YOH˜›ØÚÈ[˜Ø]H^^È›ÛY^˜X›ÛÛXİ\™K]_OÜÜ[ƒBˆÜ[ˆÛ\ÜÓ˜[YOH›]LH›ØÚÈ[˜Ø]H^VÌLH^VÈÎNHÛXİ\™KœÛİ\˜ÙU\HOOH™Øİ[Y[ˆÈ‘Øİ[Y[ˆˆXİ\™KœÛİ\˜ÙU\HOOHšY[ÈˆÈ•šY[ÈˆˆXİ\™KœÛİ\˜ÙU\HOOH˜]Y[ÈˆÈ]Y[Èˆˆ”™XÛÜ™[™ÈŸH0­ÈÛXİ\™K˜Ûİ\œÙRYÈÛİ\œÙS˜[Y\Ë™Ù]
+Xİ\™K˜Ûİ\œÙRY
+HÏÈÛİ\œÙHˆˆ•[˜\ÜÚYÛ™YŸH0­ÈÙ\Ü^Q]JXİ\™K˜Ü™X]Y][Y^›Û™J_OÜÜ[ƒBˆÛXİ\™K››İH	‰ˆ
+BˆÜ[ˆÛ\ÜÓ˜[YOH›]LH[›[™KY›^][\ËXÙ[\ˆØ\LH›İ[™Y[Y™ËVÈÙŒÙŒ™—HLKHKLH^VÎH›ÛY^˜X›Û^VÈÍÌNYNHƒBˆÜ\šÛ\ÈÛ\ÜÓ˜[YOHœÚ^™KL‹HˆÏˆ›İ\È™XYCBˆÜÜ[ƒBˆ
+_CBˆÙ]ƒBˆÜ[ˆÛ\ÜÓ˜[YO^ØÚš[šËL›İ[™YY[LˆKLH^VÎH›ÛX›XÚÈ\\˜Ø\ÙH	ÛXİ\™Kœİ]\ÈOOHœ™XYHˆÈ˜™ËVÈÙMYÙYH^VÈÌ™M™—HˆˆXİ\™Kœİ]\ÈOOH™˜Z[YˆÈ˜™ËVÈÙ™™ŒYWH^VÈØYMMHˆˆ˜™ËVÈÙ™™—H^VÈÎXÍY—HŸXOÛXİ\™Kœİ]\ßOÜÜ[ƒBˆÛXİ\™Kœİ]\ÈOOHœ™XYHˆ	‰ˆXİ\™Kœİ]\ÈOOHœ›ØÙ\ÜÚ[™Èˆ	‰ˆ
+Bˆ]Ûˆ\OH˜]Ûˆˆ\ØX›Y^Ø\Ş_H\šXK[X™[^Ø™]H	ÛXİ\™K]_XHÛÛXÚÏ^Ê]™[
+HOˆÈ]™[œİÜ›ÜYØ][ÛŠ
+NÈ›ÚY™]SXİ\™JXİ\™KšY
+NÈ_HÛ\ÜÓ˜[YOH™ÜšYÚ^™KMÈÚš[šËLXÙKZ][\ËXÙ[\ˆ›İ[™Y[È^VÈÍÌNYNHİ™\˜™ËVÈÙŒYY™—H\ØX›Y›ÜXÚ]KMLƒBˆ™Yœ™\ÚİÈÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏƒBˆØ]ÛƒBˆ
+_CBˆ]Ûˆ\OH˜]Ûˆˆ\ØX›Y^Ø\ŞHXİ\™Kœİ]\ÈOOHœ›ØÙ\ÜÚ[™ÈŸH\šXK[X™[^Ø[]H	ÛXİ\™K]_XHÛÛXÚÏ^Ê]™[
+HOˆÈ]™[œİÜ›ÜYØ][ÛŠ
+NÈ›ÚY[]SXİ\™JXİ\™JNÈ_HÛ\ÜÓ˜[YOH™ÜšYÚ^™KMÈÚš[šËLXÙKZ][\ËXÙ[\ˆ›İ[™Y[È^VÈÎNHİ™\˜™ËVÈÙ™™ŒYY—Hİ™\^VÈØMMH\ØX›Y›ÜXÚ]KMLƒBˆ˜\ÚˆÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏƒBˆØ]ÛƒBˆÙ]ƒBˆÛOƒBˆ
+NÃBˆJ_Oİ[ˆˆ[\Tİ]H]OH“›ÈXİ\™\ÈY]ˆÛÜOH•\ØY[ˆ]]Üš^™Y]Y[ÈÜˆšY[È™XÛÜ™[™ËÜˆXİ\™HØİ[Y[ÈÜ™X]H[İ\ˆš\œİ›İ\ËˆˆXİ[Û^Ï]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^ÛÛ•\ØYHÛ\ÜÓ˜[YOH^^È›ÛY^˜X›Û^VÈÍÌNYNH•\ØYHXİ\™OØ]ÛŸHÏŸCBˆÜÙXİ[ÛƒBƒBˆÙXİ[ÛˆÛ\ÜÓ˜[YOH›Z[‹ZVÍŒH›İ[™YVÌH›Ü™\ˆ›Ü™\‹VÈÙNYMYY—H™Ë]Ú]HMÛNœMˆƒBˆÈ\Ù[XİYÈ
+Bˆ]ˆÛ\ÜÓ˜[YOH™ÜšYY[Z[‹ZVÌÍŒHXÙKZ][\ËXÙ[\ˆ^XÙ[\ˆƒBˆ]ƒBˆÜ[ˆÛ\ÜÓ˜[YOH›^X]]ÈÜšYÚ^™KLLˆXÙKZ][\ËXÙ[\ˆ›İ[™YL™ËVÈÙŒY™—H^VÈÍÌNYNHƒBˆØ\ŞHÈØY\Ú\˜ÛHÛ\ÜÓ˜[YOHœÚ^™KMH[š[X]K\Ü[ˆˆÏˆˆš[U^Û\ÜÓ˜[YOHœÚ^™KMHˆÏŸCBˆÜÜ[ƒBˆˆÛ\ÜÓ˜[YOH›]M^\ÛH›ÛY^˜X›ÛØ\ŞHÈ“Ü[š[™ÈXİ\™x )ˆˆˆ•˜[œØÜš\	ˆ›İ\ÈÛÜšÜÜXÙHŸOÚƒBˆÛ\ÜÓ˜[YOH›]LHX^]Ë\ÛH^^ÈXY[™ËMH^VÈÎNMHƒBˆØ\ŞCBˆÈ“ØY[™È˜[œØÜš\[™›İ\È›ÜˆHÙ[XİYXİ\™KˆƒBˆˆÚÛÜÙHHÛÛ\]YXİ\™HÈšY]È]ÈÙ[™\˜]Y›İ\È[™ÜšYÚ[˜[Ûİ\˜ÙKˆŸCBˆÜƒBˆÙ\œ›Üˆ	‰ˆ›ÛOH˜[\ˆÛ\ÜÓ˜[YOH›^X]]È]MX^]Ë\ÛH›İ[™Y^™ËVÈÙ™™ŒYY—HLÈKL‹H^^È^VÈØMMHÙ\œ›ÜŸOÜŸCBˆÙ]ƒBˆÙ]ƒBˆ
+HˆƒBˆ]ˆÛ\ÜÓ˜[YOH™›^›^XÛÛ\İYKX™]ÙY[ˆØ\LÈ›Ü™\‹Xˆ›Ü™\‹VÈÙYYXYŒ—H‹MÛN™›^\›İÈÛNš][\Ë\İ\ƒBˆ]ˆÛ\ÜÓ˜[YOH›Z[‹]ËLƒBˆÛ\ÜÓ˜[YOH^VÎ\H›ÛX›XÚÈ\\˜Ø\ÙH˜XÚÚ[™ËVËŒL™[WH^VÈÍÌNYNHÜÙ[XİYœÛİ\˜ÙU\_H0­ÈÜÙ[XİYœİ]\ßOÜƒBˆˆÛ\ÜÓ˜[YOH›]LH[˜Ø]H^[È›ÛX›XÚÈÜÙ[XİY]_OÚƒBˆÛ\ÜÓ˜[YOH›]LH^VÌLH^VÈÎNHÙ\Ü^Q]JÙ[XİY˜Ü™X]Y][Y^›Û™KYJ_^ÜÙ[XİY˜Ûİ\œÙRYÈ0­È	ØÛİ\œÙS˜[Y\Ë™Ù]
+Ù[XİY˜Ûİ\œÙRY
+HÏÈÛİ\œÙHŸXˆˆŸOÜƒBˆÙ]ƒBˆ]ˆÛ\ÜÓ˜[YOH™›^›^]Ü˜\][\ËXÙ[\ˆØ\LKHƒBˆÜÙ[XİYœİ]\ÈOOHœ™XYHˆ	‰ˆÙ[XİY˜[œØÜš\	‰ˆ
+BˆƒBˆÜÙ[XİY››İHÈ
+BˆƒBˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^Ù^Ü›İTXİ[ÛŸHÛ\ÜÓ˜[YOHš[›[™KY›^N][\ËXÙ[\ˆØ\LKH›İ[™Y[È›Ü™\ˆ›Ü™\‹VÈØÙ˜Í—H™ËVÈÙYŒ™™—HL‹H^VÎ\H›ÛY^˜X›Û^VÈÍÌNYNHİ™\˜™ËVÈÙXÙMÙ™—HÚYİË\ÛHš[QİÛˆÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏˆ^ÜØ]ÛƒBˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^ØÛÜS›İSX\šÙİÛXİ[ÛŸHÛ\ÜÓ˜[YOHš[›[™KY›^N][\ËXÙ[\ˆØ\LKH›İ[™Y[È›Ü™\ˆ›Ü™\‹VÈÙM™L™X—HL‹H^VÎ\H›ÛX›Ûİ™\˜™ËVÈÙ˜YY™HÛ\›Ø\™Û\ÜÓ˜[YOHœÚ^™KLËHˆÏˆÛÜH›İ\ÏØ]ÛƒBˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^ÙİÛ›ØY›İSX\šÙİÛXİ[ÛŸHÛ\ÜÓ˜[YOHš[›[™KY›^N][\ËXÙ[\ˆØ\LKH›İ[™Y[È›Ü™\ˆ›Ü™\‹VÈÙM™L™X—HL‹H^VÎ\H›ÛX›Ûİ™\˜™ËVÈÙ˜YY™HİÛ›ØYÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏˆİÛ›ØY›YØ]ÛƒBˆ]Ûˆ\OH˜]Ûˆˆ\ØX›Y^ÙÙ[™\˜][™Ó›İ\ßHÛÛXÚÏ^Ê
+HOˆ›ÚYÙ[™\˜]S›İ\Ê
+_HÛ\ÜÓ˜[YOHš[›[™KY›^N][\ËXÙ[\ˆØ\LKH›İ[™Y[È›Ü™\ˆ›Ü™\‹VÈÙM™L™X—HL‹H^VÎ\H›ÛX›Ûİ™\˜™ËVÈÙ˜YY™H\ØX›Y›ÜXÚ]KMLƒBˆÙÙ[™\˜][™Ó›İ\ÈÈØY\Ú\˜ÛHÛ\ÜÓ˜[YOHœÚ^™KLËH[š[X]K\Ü[ˆˆÏˆˆÜ\šÛ\ÈÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏŸH™YÙ[™\˜]H›İ\ÃBˆØ]ÛƒBˆÏƒBˆ
+Hˆ
+Bˆ]Ûˆ\OH˜]Ûˆˆ\ØX›Y^ÙÙ[™\˜][™Ó›İ\ßHÛÛXÚÏ^Ê
+HOˆ›ÚYÙ[™\˜]S›İ\Ê
+_HÛ\ÜÓ˜[YOHš[›[™KY›^N][\ËXÙ[\ˆØ\LKH›İ[™Y[È™ËVÈÍÌNYNHLÈ^VÎ\H›ÛX›XÚÈ^]Ú]HÚYİË\ÛHİ™\˜™ËVÈÍŒYWH\ØX›Y›ÜXÚ]KMLƒBˆÙÙ[™\˜][™Ó›İ\ÈÈØY\Ú\˜ÛHÛ\ÜÓ˜[YOHœÚ^™KLËH[š[X]K\Ü[ˆˆÏˆˆÜ\šÛ\ÈÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏŸHÙ[™\˜]HRH›İ\ÃBˆØ]ÛƒBˆ
+_CBˆÏƒBˆ
+_CBˆÜÙ[XİYœİ]\ÈOOHœ™XYHˆ	‰ˆ]Ûˆ\OH˜]Ûˆˆ\ØX›Y^Ø\Ş_HÛÛXÚÏ^Ê
+HOˆ›ÚY™]SXİ\™JÙ[XİYšY
+_HÛ\ÜÓ˜[YOHš[›[™KY›^N][\ËXÙ[\ˆØ\LKH›İ[™Y[È™ËVÈÍÌNYNHL‹H^VÎ\H›ÛY^˜X›Û^]Ú]H\ØX›Y›ÜXÚ]KML™Yœ™\ÚİÈÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏˆ™]OØ]ÛŸCBˆÙ]ƒBˆÙ]ƒBƒBˆËÊˆYYXH]Y[ÈÈšY[È^Y\ˆÜˆØİ[Y[Ø\™
+‹ßCBˆ]ˆÛ\ÜÓ˜[YOH›]MƒBˆÜÙ[XİYœÛİ\˜ÙU\HOOHšY[ÈˆÈ
+Bˆ]ˆÛ\ÜÓ˜[YOH›İ™\™›İËZY[ˆ›İ[™YL›Ü™\ˆ›Ü™\‹VÈÙM˜WH™ËX›XÚÈÚYİË\ÛHƒBˆšY[ÃBˆÜ˜Ï^ÜÙ[XİY›YYXU\›Ø\KÛXİ\™\ËÉÜÙ[XİYšYKÛYYXXCBˆÛÛ›ÛÃBˆÛ\ÜÓ˜[YOH›X^ZVÌŒHËY[ƒBˆÏƒBˆÙ]ƒBˆ
+HˆÙ[XİYœÛİ\˜ÙU\HOOH™Øİ[Y[ˆÈ
+Bˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆØ\LÈ›İ[™YL›Ü™\ˆ›Ü™\‹VÈÙM˜WH™ËVÈÙ˜Y™—HMƒBˆ]ˆÛ\ÜÓ˜[YOH™ÜšYÚ^™KLLXÙKZ][\ËXÙ[\ˆ›İ[™Y^™ËVÈÙYN™—H^VÈÍÌNYNHƒBˆš[U^Û\ÜÓ˜[YOHœÚ^™KMHˆÏƒBˆÙ]ƒBˆ]ˆÛ\ÜÓ˜[YOH›Z[‹]ËL›^LHƒBˆÛ\ÜÓ˜[YOH^^È›ÛX›Û^VÈÌYLMÌÌH‘Øİ[Y[Xİ\™HX]\šX[ÜƒBˆÛ\ÜÓ˜[YOH^VÌLH^VÈÍÙMÍÎ—H•šY]ÈHÜšYÚ[˜[\ØYYš[H[Û™ÜÚYH]ÈÙ[™\˜]Y›İ\ÏÜƒBˆÙ]ƒBˆÜÙ[XİY›YYXU\›	‰ˆ
+BˆCBˆ™Y^ÜÙ[XİY›YYXU\›CBˆ\™Ù]H—Ø›[šÈƒBˆ™[H››Ü™Y™\œ™\ˆƒBˆİÛ›ØYBˆÛ\ÜÓ˜[YOHš[›[™KY›^N][\ËXÙ[\ˆØ\LKH›İ[™Y[È›Ü™\ˆ›Ü™\‹VÈØÙ˜Í—H™Ë]Ú]HL‹H^VÎ\H›ÛX›Û^VÈÍÌNYNHİ™\˜™ËVÈÙYŒ™™—HƒBˆƒBˆİÛ›ØYÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏˆİÛ›ØYÜšYÚ[˜[BˆØOƒBˆ
+_CBˆÙ]ƒBˆ
+Hˆ
+Bˆ]Y[Ô^Y\ƒBˆÜ˜Ï^ÜÙ[XİY›YYXU\›Ø\KÛXİ\™\ËÉÜÙ[XİYšYKÛYYXXCBˆ]O^ÜÙ[XİY]_CBˆ˜\šX[H˜Ø\™ƒBˆ\˜][Û’[ÙXÛÛ™Ï^ÜÙ[XİY™\˜][Û”ÙXÛÛ™ÈÏÈ[™Yš[™YCBˆÏƒBˆ
+_CBˆÙ]ƒBƒBˆÜÙ[XİYœİ]\ÈOOHœ›ØÙ\ÜÚ[™Èˆ	‰ˆÛ\ÜÓ˜[YOH›]M›İ[™Y^™ËVÈÙ™™Y—HLÈKL‹H^^È^VÈÎM™WH•˜[œØÜš\[Ûˆ\È[ˆ›ÙÜ™\ÜËˆ™Yœ™\Ú\ÈYÙH[ˆH[ÛY[ÈÚXÚÈ]Èİ]\ËÜŸCBˆÜÙ[XİYœİ]\ÈOOH\ØYYˆ	‰ˆÛ\ÜÓ˜[YOH›]M›İ[™Y^™ËVÈÙŒ™Y™™—HLÈKL‹H^^È^VÈÍYØ×H–[İ\ˆ\ØY\Èš]˜]H[™™XYHÈ›ØÙ\ÜËˆÛÛ™šYİ\™H[İ\ˆÙ\™\ˆ˜[œØÜš\[ÛˆÙ^H
+Ô“ÔWĞTWÒÑVJHYˆ›ØÙ\ÜÚ[™È\È›İÙ]\Y]ÜŸCBˆÜÙ[XİYœİ]\ÈOOH™˜Z[Yˆ	‰ˆÛ\ÜÓ˜[YOH›]M›İ[™Y^™ËVÈÙ™™ŒYY—HLÈKL‹H^^ÈXY[™ËMH^VÈØMMHÜÙ[XİYœ›ØÙ\ÜÚ[™Ñ\œ›Üˆ•\ÈXİ\™HÛİ[›İ™H›ØÙ\ÜÙYˆ[İ\ˆš]˜]HYYXH\È™]Z[™YÈ™]HÚ[ˆH›İšY\ˆ\È]˜Z[X›KˆŸOÜŸCBƒBˆÜÙ[XİYœİ]\ÈOOHœ™XYHˆ	‰ˆÙ[XİY˜[œØÜš\	‰ˆ
+Bˆ]ˆÛ\ÜÓ˜[YOH›]MHƒBˆËÊˆİY[ÈXœÈİÚ]Ú\ˆ
+‹ßCBˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆ\İYKX™]ÙY[ˆ›Ü™\‹Xˆ›Ü™\‹VÈÙXÙNH‹LˆƒBˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆØ\LˆƒBˆ]ÛƒBˆ\OH˜]ÛˆƒBˆÛÛXÚÏ^Ê
+HOˆÙ]İY[ÕXŠ››İ\ÈŠ_CBˆÛ\ÜÓ˜[YO^Ø›^][\ËXÙ[\ˆØ\Lˆ›İ[™Y^LËHKLKH^^È›ÛX›XÚÈ˜[œÚ][Ûˆ	ÃBˆİY[ÕXˆOOH››İ\ÈˆÈ˜™ËVÈÍÌNYNH^]Ú]HÚYİË\ÛHˆˆ^VÈÍÍÌ—Hİ™\˜™ËVÈÙ™˜WHƒBˆXCBˆƒBˆÜ\šÛ\ÈÛ\ÜÓ˜[YOHœÚ^™KLËHˆÏˆÙ[™\˜]Y›İ\ÃBˆÜÙ[XİY››İH	‰ˆÜ[ˆÛ\ÜÓ˜[YOHœ›İ[™YY[™Ë]Ú]KÌŒLKHKLŒˆ^VÎH›ÛY^˜X›Û”™XYOÜÜ[ŸCBˆØ]ÛƒBˆ]ÛƒBˆ\OH˜]ÛˆƒBˆÛÛXÚÏ^Ê
+HOˆÙ]İY[ÕXŠ˜[œØÜš\Š_CBˆÛ\ÜÓ˜[YO^Ø›^][\ËXÙ[\ˆØ\Lˆ›İ[™Y^LËHKLKH^^È›ÛX›XÚÈ˜[œÚ][Ûˆ	ÃBˆİY[ÕXˆOOH˜[œØÜš\ˆÈ˜™ËVÈÍÌNYNH^]Ú]HÚYİË\ÛHˆˆ^VÈÍÍÌ—Hİ™\˜™ËVÈÙ™˜WHƒBˆXCBˆƒBˆš[U^Û\ÜÓ˜[YOHœÚ^™KLËHˆÏˆÜÙ[XİYœÛİ\˜ÙU\HOOH™Øİ[Y[ˆÈ“ÜšYÚ[˜[š[Hˆˆ•˜[œØÜš\ŸCBˆØ]ÛƒBˆÙ]ƒBˆÜİY[ÕXˆOOH˜[œØÜš\ˆ	‰ˆÙ[XİYœÛİ\˜ÙU\HOOH™Øİ[Y[ˆ	‰ˆ
+Bˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆØ\LˆƒBˆ]Ûˆ\OH˜]Ûˆˆ\ØX›Y^È\Ù[XİY˜[œØÜš\\Ş_HÛÛXÚÏ^ØÛÜU˜[œØÜš\HÛ\ÜÓ˜[YOHš[›[™KY›^MÈ][\ËXÙ[\ˆØ\LH›İ[™Y[Y›Ü™\ˆ›Ü™\‹VÈÙM™L™X—HLˆ^VÎ\H›ÛX›ÛÛ\›Ø\™Û\ÜÓ˜[YOHœÚ^™KLÈˆÏˆÛÜOØ]ÛƒBˆ]Ûˆ\OH˜]Ûˆˆ\ØX›Y^È\Ù[XİY˜[œØÜš\\Ş_HÛÛXÚÏ^ÙİÛ›ØY˜[œØÜš\HÛ\ÜÓ˜[YOHš[›[™KY›^MÈ][\ËXÙ[\ˆØ\LH›İ[™Y[Y›Ü™\ˆ›Ü™\‹VÈÙM™L™X—HLˆ^VÎ\H›ÛX›ÛİÛ›ØYÛ\ÜÓ˜[YOHœÚ^™KLÈˆÏˆİÛ›ØYØ]ÛƒBˆÙ]ƒBˆ
+_CBˆÙ]ƒBƒBˆËÊˆXˆNˆÜ™Ø[š^™Y›İ\È
+‹ßCBˆÜİY[ÕXˆOOH››İ\Èˆ	‰ˆ
+Bˆ]ƒBˆÜÙ[XİY››İHÈ
+BˆÜ™Ø[š^™Y›İ\Ñ\Ü^H›İO^ÜÙ[XİY››İ_HÏƒBˆ
+Hˆ
+Bˆ]ˆÛ\ÜÓ˜[YOH›]MH›İ[™YL›Ü™\ˆ›Ü™\‹Y\ÚY›Ü™\‹VÈÙYWH™ËVÈÙ˜Y™—HN^XÙ[\ˆƒBˆ]ˆÛ\ÜÓ˜[YOH›^X]]ÈÜšYÚ^™KLLˆXÙKZ][\ËXÙ[\ˆ›İ[™YL™ËVÈÙYYMÙ™—H^VÈÍÌNYNHƒBˆÜ\šÛ\ÈÛ\ÜÓ˜[YOHœÚ^™KMˆˆÏƒBˆÙ]ƒBˆÈÛ\ÜÓ˜[YOH›]LÈ^X˜\ÙH›ÛX›XÚÈ^VÈÌMÌLÌ™H“Ü™Ø[š^™H\ÈXİ\™H[È›İ\ÏÚÏƒBˆÛ\ÜÓ˜[YOH›^X]]È]LHX^]Ë[Y^^ÈXY[™ËMH^VÈÍÌÍ˜ÎWHƒBˆ\›ˆ\ÈXİ\™H[È[ˆ^Xİ]]™Hİ[[X\KÜXÈœ™XZÙİÛ‹Ù^H›ØØX[\HÛÜÜØ\K[™Xİ]™K\™XØ[\İ]Y\İ[ÛœËƒBˆÜƒBˆ]ÛƒBˆ\OH˜]ÛˆƒBˆ\ØX›Y^ÙÙ[™\˜][™Ó›İ\ßCBˆÛÛXÚÏ^Ê
+HOˆ›ÚYÙ[™\˜]S›İ\Ê
+_CBˆÛ\ÜÓ˜[YOH›]MH[›[™KY›^][\ËXÙ[\ˆØ\Lˆ›İ[™Y^™ËVÈÍÌNYNHMHKL‹H^^È›ÛX›XÚÈ^]Ú]HÚYİË\ÛHİ™\˜™ËVÈÍŒYWH\ØX›Y›ÜXÚ]KMŒƒBˆƒBˆÙÙ[™\˜][™Ó›İ\ÈÈ
+BˆƒBˆØY\Ú\˜ÛHÛ\ÜÓ˜[YOHœÚ^™KM[š[X]K\Ü[ˆˆÏˆÜ™Ø[š^š[™ÈXİ\™H›İ\ÈÚ]Rx )ƒBˆÏƒBˆ
+Hˆ
+BˆƒBˆÜ\šÛ\ÈÛ\ÜÓ˜[YOHœÚ^™KMˆÏˆÙ[™\˜]HÜ™Ø[š^™Y›İ\ÈÚ]RCBˆÏƒBˆ
+_CBˆØ]ÛƒBˆÙ]ƒBˆ
+_CBˆÙ]ƒBˆ
+_CBƒBˆËÊˆXˆˆ˜]È˜[œØÜš\
+‹ßCBˆÜİY[ÕXˆOOH˜[œØÜš\ˆ	‰ˆÙ[XİYœÛİ\˜ÙU\HOOH™Øİ[Y[ˆ	‰ˆ
+Bˆ]ˆÛ\ÜÓ˜[YOH›]Mİ™\™›İËZY[ˆ›İ[™YL›Ü™\ˆ›Ü™\‹VÈÙNYMYY—H™ËVÈÙ™˜Ù™—HƒBˆÜÙ[XİY›YYXU\›È
+BˆYœ˜[YH]O^ØÜšYÚ[˜[š[Nˆ	ÜÙ[XİY]_XHÜ˜Ï^ÜÙ[XİY›YYXU\›HÛ\ÜÓ˜[YOHšVÛZ[Š]šÌ
+WHËY[™Ë]Ú]HˆÏƒBˆ
+Hˆ
+BˆÛ\ÜÓ˜[YOHœMˆ^^È^VÈÍÙMÍÎ—H•HÜšYÚ[˜[š[H™]šY]È\È[˜]˜Z[X›KÜƒBˆ
+_CBˆÙ]ƒBˆ
+_CBˆÜİY[ÕXˆOOH˜[œØÜš\ˆ	‰ˆÙ[XİYœÛİ\˜ÙU\HOOH™Øİ[Y[ˆ	‰ˆ
+BˆƒBˆ]ˆÛ\ÜÓ˜[YOH›]M›^][\ËXÙ[\ˆ\İYKX™]ÙY[ˆƒBˆÛ\ÜÓ˜[YOH^VÎ\H›ÛX›XÚÈ\\˜Ø\ÙH˜XÚÚ[™ËVËŒL™[WH^VÈÎNMH“ÜšYÚ[˜[˜[œØÜš\0­ÈY]X›OÜƒBˆÙ\H	‰ˆÜ[ˆÛ\ÜÓ˜[YOH^VÎ\H›ÛX›Û^VÈØLM˜ŒM×H•[œØ]™YÚ[™Ù\ÏÜÜ[ŸCBˆÙ]ƒBˆ^\™XCBˆ\šXK[X™[H“Xİ\™H˜[œØÜš\ƒBˆ˜[YO^İ˜[œØÜš\˜YCBˆÛÚ[™ÙO^Ê]™[
+HOˆÃBˆÙ]˜[œØÜš\˜Y
+]™[\™Ù]˜[YJNÃBˆÙ]\JYJNÃBˆ_CBˆX^[™İ^ÍLÌCBˆÛ\ÜÓ˜[YOH›]LˆZ[‹ZVÌÌLHËY[™\Ú^™K^H›İ[™YL›Ü™\ˆ›Ü™\‹VÈÙNYMYY—H™ËVÈÙ™˜Ù™—HM^^ÈXY[™ËMˆ^VÈÍØ—Hİ][™K[›Û™H›Øİ\Î˜›Ü™\‹VÈØÎX™ŒWHƒBˆÏƒBˆ]ˆÛ\ÜÓ˜[YOH›]LÈ›^][\ËXÙ[\ˆ\İYKX™]ÙY[ˆØ\LÈƒBˆÜ[ˆÛ\ÜÓ˜[YOH^VÎ\H^VÈÎNMHİ˜[œØÜš\˜Y›[™İÓØØ[Tİš[™Ê
+_HÈLÚ\˜Xİ\œÏÜÜ[ƒBˆ]ÛƒBˆ\OH˜]ÛˆƒBˆ\ØX›Y^ÈY\H\ŞH]˜[œØÜš\˜Yš[J
+_CBˆÛÛXÚÏ^Ê
+HOˆ›ÚYØ]™U˜[œØÜš\
+
+_CBˆÛ\ÜÓ˜[YOHš[›[™KY›^NH][\ËXÙ[\ˆØ\Lˆ›İ[™Y^™ËVÈÍÌNYNHLÈ^VÌLH›ÛY^˜X›Û^]Ú]H\ØX›Y›ÜXÚ]KMLƒBˆƒBˆØ\ŞH	‰ˆØY\Ú\˜ÛHÛ\ÜÓ˜[YOHœÚ^™KLËH[š[X]K\Ü[ˆˆÏŸHØ]™H˜[œØÜš\BˆØ]ÛƒBˆÙ]ƒBˆÏƒBˆ
+_CBˆÙ]ƒBˆ
+_CBˆÏŸCBˆÙ\œ›Üˆ	‰ˆ›ÛOH˜[\ˆÛ\ÜÓ˜[YOH›]LÈ›İ[™Y^™ËVÈÙ™™ŒYY—HLÈKL‹H^^È^VÈØMMHÙ\œ›ÜŸOÜŸCBˆÛ›İXÙH	‰ˆ›ÛOHœİ]\ÈˆÛ\ÜÓ˜[YOH›]LÈ›İ[™Y^™ËVÈÙNÙY—HLÈKL‹H^^È^VÈÌ™M™—HÛ›İXÙ_OÜŸCBˆÜÙXİ[ÛƒBˆÙ]ƒBˆÛ\ÜÓ˜[YOH›]M^VÌLHXY[™ËMH^VÈÎNMH“Û›H\ØYXİ\™HX]\šX[È[İH]™H\›Z\ÜÚ[ÛˆÈ\ÙKˆÜšYÚ[˜[š[\È\™HÙ\[ˆ[İ\ˆš]˜]HXØÛİ[È]Y[È[™šY[È\™HÙ[È[İ\ˆÛÛ™šYİ\™Y˜[œØÜš\[Ûˆ›İšY\‹ÜƒBˆÙ]ÃBŸCBƒB™[˜İ[ÛˆÛİ\œÙQ]Z[
+ÈÛİ\œÙKXİ\™\ËXİ\™Q\œ›Ü‹[Y^›Û™KÛ˜XÚËÛØ\\™HNˆÃBˆÛİ\œÙNˆİYÙMÛİ\œÙNÃBˆXİ\™\ÎˆİYÙM“Xİ\™V×NÃBˆXİ\™Q\œ›Üˆ›ÛÛX[ÃBˆ[Y^›Û™Nˆİš[™ÎÃBˆÛ˜XÚÎˆ
+
+HOˆ›ÚYÃBˆÛØ\\™Nˆ
+
+HOˆ›ÚYÃBŸJHÃBˆÛÛœİİX‹Ù]X—HH\ÙTİ]O›İ™\šY]Èˆ›Xİ\™\ÈŠ›İ™\šY]ÈŠNÃBˆ™]\›ˆ]ƒBˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^ÛÛ˜XÚßHÛ\ÜÓ˜[YOH›X‹M^^È›ÛY^˜X›Û^VÈÍÌNYNH¸¡¤[Ûİ\œÙ\ÏØ]ÛƒBˆ]ˆÛ\ÜÓ˜[YOHœ›İ[™YVÌH›Ü™\ˆ›Ü™\‹VÈÙNYMYY—H™Ë]Ú]HMHÛNœMÈƒBˆ]ˆÛ\ÜÓ˜[YOH™›^][\Ë\İ\Ø\MÜ[ˆÛ\ÜÓ˜[YOH™ÜšYÚ^™KLLˆÚš[šËLXÙKZ][\ËXÙ[\ˆ›İ[™YLˆİ[O^ŞÈÛÛÜˆÛİ\œÙK˜ÛÛÜ‹˜XÚÙÜ›İ[™ÛÛÜˆ	ØÛİ\œÙK˜ÛÛÜŸLN_O›ÛÚÓÜ[ˆÛ\ÜÓ˜[YOHœÚ^™KMˆˆÏÜÜ[]ˆÛ\ÜÓ˜[YOH›Z[‹]ËLÛ\ÜÓ˜[YOH^VÌLH›ÛX›XÚÈ\\˜Ø\ÙH˜XÚÚ[™ËVËŒL™[WH^VÈÎNHØÛİ\œÙK˜ÛÙ_^ØÛİ\œÙK\›HÈ0­È	ØÛİ\œÙK\›_XˆˆŸOÜHÛ\ÜÓ˜[YOH›]LH[˜Ø]H^L›ÛX›XÚÈ˜XÚÚ[™ËVËKÜHØÛİ\œÙK]_OÚOÛ\ÜÓ˜[YOH›]LH^^È^VÈÎNH–[İ\ˆ\œÛÛ˜[Ûİ\œÙHÛÜšÜÜXÙOÜÙ]Ù]ƒBˆ]ˆÛ\ÜÓ˜[YOH›]Mˆ›^Ø\Lˆ›Ü™\‹Xˆ›Ü™\‹VÈÙYYXYŒ—H]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^Ê
+HOˆÙ]XŠ›İ™\šY]ÈŠ_HÛ\ÜÓ˜[YO^Ø›Ü™\‹X‹LˆLÈKLˆ^^È›ÛY^˜X›Û	İXˆOOH›İ™\šY]ÈˆÈ˜›Ü™\‹VÈÍÌNYNH^VÈÍÌNYNHˆˆ˜›Ü™\‹]˜[œÜ\™[^VÈÎNHŸXO“İ™\šY]ÏØ]Û]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^Ê
+HOˆÙ]XŠ›Xİ\™\ÈŠ_HÛ\ÜÓ˜[YO^Ø›Ü™\‹X‹LˆLÈKLˆ^^È›ÛY^˜X›Û	İXˆOOH›Xİ\™\ÈˆÈ˜›Ü™\‹VÈÍÌNYNH^VÈÍÌNYNHˆˆ˜›Ü™\‹]˜[œÜ\™[^VÈÎNHŸXO“Xİ\™\ÏØ]ÛÙ]ƒBˆİXˆOOH›İ™\šY]ÈˆÈ]ˆÛ\ÜÓ˜[YOH™ÜšYØ\LÈKMHÛN™ÜšYXÛÛËLˆ]ˆÛ\ÜÓ˜[YOHœ›İ[™YL™ËVÈÙ™™—HMÛ\ÜÓ˜[YOH^VÎ\H›ÛX›XÚÈ\\˜Ø\ÙH˜XÚÚ[™ËVËŒL™[WH^VÈÎNH“Xİ\™\ÏÜÛ\ÜÓ˜[YOH›]Lˆ^L›ÛX›XÚÈÛXİ\™\Ë›[™İOÜÛ\ÜÓ˜[YOH›]LH^VÌLH^VÈÎNHœØ]™YÈ\ÈÛİ\œÙOÜÙ]]ˆÛ\ÜÓ˜[YOHœ›İ[™YL™ËVÈÙÙ˜™HMÛ\ÜÓ˜[YOH^VÎ\H›ÛX›XÚÈ\\˜Ø\ÙH˜XÚÚ[™ËVËŒL™[WH^VÈÎNH”İYH™\Ûİ\˜Ù\ÏÜÛ\ÜÓ˜[YOH›]Lˆ^\ÛH›ÛY^˜X›Û]˜Z[X›H[ˆ\ÛÛZ[™ÈİYÙ\ÏÜÛ\ÜÓ˜[YOH›]LH^VÌLHXY[™ËM^VÈÎNH”™\Ûİ\˜Ù\Ë›\ÚØ\™Ë]Z^™\ËÛİ\œÙH\ÚÜË[™Ü›İ\ÈÚ[\X\ˆ\ÈÜÙH™X]\™\È\™H[\[Y[YÜÙ]]ˆÛ\ÜÓ˜[YOHœÛN˜ÛÛ\Ü[‹Lˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^ÛÛØ\\™_HÛ\ÜÓ˜[YOHš[›[™KY›^LL][\ËXÙ[\ˆØ\Lˆ›İ[™Y^™ËVÈÍÌNYNHM^^È›ÛY^˜X›Û^]Ú]H\ÈÛ\ÜÓ˜[YOHœÚ^™KMˆÏˆYHXİ\™OØ]ÛÙ]Ù]ˆˆ]ˆÛ\ÜÓ˜[YOHœKMHÛXİ\™Q\œ›ÜˆÈÙXİ[Û‘\œ›ÜÛİ\œÙHXİ\™\ÈÛİ[›İ™HØYYˆ™Yœ™\ÚÈHYØZ[‹ÔÙXİ[Û‘\œ›ÜˆˆXİ\™\Ë›[™İÈ[Û\ÜÓ˜[YOH™]šYK^H]šYKVÈÙŒYHÛXİ\™\Ë›X\
+
+Xİ\™JHOˆHÙ^O^ÛXİ\™KšYHÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆØ\LÈKLÈš\œİœLÜ[ˆÛ\ÜÓ˜[YOH™ÜšYÚ^™KNHXÙKZ][\ËXÙ[\ˆ›İ[™Y^™ËVÈÙŒÙŒ™—H^VÈÍÌNYNHš[U^Û\ÜÓ˜[YOHœÚ^™KMˆÏÜÜ[]ˆÛ\ÜÓ˜[YOH›Z[‹]ËL›^LHÛ\ÜÓ˜[YOH[˜Ø]H^^È›ÛY^˜X›ÛÛXİ\™K]_OÜÛ\ÜÓ˜[YOH›]LH^VÌLH^VÈÎNHÛXİ\™Kœİ]\ßH0­ÈÙ\Ü^Q]JXİ\™K˜Ü™X]Y][Y^›Û™J_OÜÙ]ÛOŠ_Oİ[ˆˆ[\Tİ]H]OH“›ÈXİ\™\È[ˆ\ÈÛİ\œÙHY]ˆÛÜOHYHXİ\™HÈZ[HÛİ\œÙK\ÜXÚYšXÈİYHÜXÙKˆˆXİ[Û^Ï]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^ÛÛØ\\™_HÛ\ÜÓ˜[YOH^^È›ÛY^˜X›Û^VÈÍÌNYNH•\ØYHXİ\™OØ]ÛŸHÏŸOÙ]ŸCBˆ]ˆÛ\ÜÓ˜[YOH›]Lˆ›Ü™\‹]›Ü™\‹VÈÙYYXYŒ—HMÛ\ÜÓ˜[YOH›X‹LÈ^VÎ\H›ÛX›XÚÈ\\˜Ø\ÙH˜XÚÚ[™ËVËŒL™[WH^VÈÎXNML×H”[›™YÛÜšÜÜXÙHÙXİ[ÛœÏÜ]ˆÛ\ÜÓ˜[YOH™›^›^]Ü˜\Ø\LˆÖÖÓ^Y\œÌË‘›\ÚØ\™È—KÔÜ\šÛ\Ë”™\Ûİ\˜Ù\È—KĞÚXÚË”]Z^™\È—KĞØ[[™\‘^\Ë•\ÚÜÈ—KÕ\Ù\œÔ›İ[™”İYHÜ›İ\È—WK›X\
+
+ÒXÛÛ‹X™[JHOˆÜ[ˆÙ^O^ÛX™[\Èİš[™ßHÛ\ÜÓ˜[YOHš[›[™KY›^][\ËXÙ[\ˆØ\LKH›İ[™YY[™ËVÈÙŒ™×HLÈKLKH^VÌLH›ÛX›Û^VÈÎNHXÛÛˆÛ\ÜÓ˜[YOHœÚ^™KLÈˆÏÛX™[\Èİš[™ßH0­È]\ÜÜ[Š_OÙ]Ù]ƒBˆÙ]ƒBˆÙ]ÃBŸCB
