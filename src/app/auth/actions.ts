@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthRedirectUrl, getSupabaseConfigurationError } from "@/lib/supabase/config";
 
@@ -33,7 +34,16 @@ function mapAuthError(message: string, action: "login" | "register") {
   if (normalized.includes("password") && (normalized.includes("weak") || normalized.includes("short"))) {
     return "Choose a stronger password with at least 8 characters.";
   }
+  if (action === "register" && normalized.includes("error sending confirmation email")) {
+    return "Supabase couldn’t send the verification email. Check the project’s Auth email or SMTP settings and try again.";
+  }
+  if (action === "register" && normalized.includes("signups not allowed")) {
+    return "Email registration is disabled in Supabase. Enable sign-ups in the project’s Auth settings.";
+  }
   if (normalized.includes("invalid email")) return "Enter a valid email address.";
+  if (action === "register" && normalized.includes("redirect")) {
+    return "Email verification could not start. Add this app’s /auth/callback URL to the Supabase Auth redirect URL allowlist.";
+  }
   return action === "login"
     ? "We couldn’t sign you in. Check your details and try again."
     : "We couldn’t create your account. Check your details and try again.";
@@ -83,12 +93,13 @@ export async function register(
   let result;
   try {
     const supabase = await createClient();
+    const requestOrigin = (await headers()).get("origin");
     result = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: { full_name: name },
-        emailRedirectTo: getAuthRedirectUrl("/auth/callback?next=/onboarding"),
+        emailRedirectTo: getAuthRedirectUrl("/auth/callback?next=/onboarding", requestOrigin),
       },
     });
   } catch {
@@ -117,8 +128,9 @@ export async function requestPasswordReset(
 
   try {
     const supabase = await createClient();
+    const requestOrigin = (await headers()).get("origin");
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: getAuthRedirectUrl("/auth/callback?next=/auth/update-password"),
+      redirectTo: getAuthRedirectUrl("/auth/callback?next=/auth/update-password", requestOrigin),
     });
     if (error) return { error: "We couldn’t send a reset link right now. Please try again later." };
     return { success: "If an account uses that email, password reset instructions are on the way." };
