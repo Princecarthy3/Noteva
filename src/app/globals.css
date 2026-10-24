@@ -12,138 +12,128 @@
   --line: #e9e6f2;
 }
 
-html[data-theme="dark"] {
+/*
+ * Dark theme is workspace-only.
+ * Landing, auth/login, and other public pages stay light regardless of preference.
+ */
+html[data-theme="dark"] .workspace-shell {
   color-scheme: dark;
   --ink: #f3f0fa;
   --muted: #aaa4b8;
   --paper: #100f18;
   --lavender-soft: #302a48;
   --line: #353244;
-}
-
-html[data-theme="dark"] body {
-  background-color: #100f18;
-  color: #f3f0fa;
-}
-
-html[data-theme="dark"] .workspace-shell {
   background: #100f18 !important;
   color: #f3f0fa !important;
 }
 
 html[data-theme="dark"] .workspace-shell .bg-white,
-html[data-theme="dark"] [class~="bg-white"] {
+html[data-theme="dark"] .workspace-shell [class~="bg-white"] {
   background-color: #1b1926 !important;
 }
 
 html[data-theme="dark"] .workspace-shell [class*="bg-[#f"],
-html[data-theme="dark"] [class*="bg-[#fb"],
-html[data-theme="dark"] [class*="bg-[#f7"],
-html[data-theme="dark"] [class*="bg-[#f5"],
-html[data-theme="dark"] [class*="bg-[#f4"],
-html[data-theme="dark"] [class*="bg-[#f3"],
-html[data-theme="dark"] [class*="bg-[#f2"],
-html[data-theme="dark"] [class*="bg-[#f1"],
-html[data-theme="dark"] [class*="bg-[#f0"] {
+html[data-theme="dark"] .workspace-shell [class*="bg-[#fb"],
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f7"],
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f5"],
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f4"],
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f3"],
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f2"],
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f1"],
+html[data-theme="dark"] .workspace-shell [class*="bg-[#f0"] {
   background-color: #242130 !important;
 }
 
 html[data-theme="dark"] .workspace-shell [class~="text-[#17132d]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#28233a]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#211b35]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#302a40]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#2a2440]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#252033]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#373145]"],
-html[data-theme="dark"] [class~="text-[#17132d]"],
-html[data-theme="dark"] [class~="text-[#28233a]"],
-html[data-theme="dark"] [class~="text-[#211b35]"],
-html[data-theme="dark"] [class~="text-[#302a40]"],
-html[data-theme="dark"] [class~="text-[#2a2440]"],
-html[data-theme="dark"] [class~="text-[#252033]"],
-html[data-theme="dark"] [class~="text-[#373145]"],
-html[data-theme="dark"] [class~="text-[#3d374a]"],
-html[data-theme="dark"] [class~="text-[#403b4b]"],
-html[data-theme="dark"] [class~="text-[#343047]"],
-html[data-theme="dark"] [class~="text-[#514a66]"],
-html[data-theme="dark"] [class~="text-[#555064]"],
-html[data-theme="dark"] [class~="text-[#605a72]"],
-html[data-theme="dark"] [class~="text-[#625b6d]"],
-html[data-theme="dark"] [class~="text-[#40384f]"],
-html[data-theme="dark"] [class~="text-[#4e485b]"] {
+html[data-theme="dark"] .workspace-shell [class~="text-[#3d374a]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#403b4b]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#343047]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#514a66]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#555064]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#605a72]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#625b6d]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#40384f]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#4e485b]"] {
   color: #f3f0fa !important;
 }
 
 html[data-theme="dark"] .workspace-shell [class~="text-[#7d7789]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#85808d]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#878193]"],
 html[data-theme="dark"] .workspace-shell [class~="text-[#8a8494]"],
-html[data-theme="dark"] [class~="text-[#7d7789]"],
-html[data-theme="dark"] [class~="text-[#85808d]"],
-html[data-theme="dark"] [class~="text-[#878193]"],
-html[data-theme="dark"] [class~="text-[#8a8494]"],
-html[data-theme="dark"] [class~="text-[#696277]"],
-html[data-theme="dark"] [class~="text-[#6e6a7e]"],
-html[data-theme="dark"] [class~="text-[#6c667a]"],
-html[data-theme="dark"] [class~="text-[#5f596b]"] {
+html[data-theme="dark"] .workspace-shell [class~="text-[#696277]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#6e6a7e]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#6c667a]"],
+html[data-theme="dark"] .workspace-shell [class~="text-[#5f596b]"] {
   color: #b9b3c7 !important;
 }
 
 html[data-theme="dark"] .workspace-shell [class*="border-[#e"],
-html[data-theme="dark"] .workspace-shell [class*="border-[#f"],
-html[data-theme="dark"] [class*="border-[#e"],
-html[data-theme="dark"] [class*="border-[#f"] {
+html[data-theme="dark"] .workspace-shell [class*="border-[#f"] {
   border-color: #393648 !important;
 }
 
 html[data-theme="dark"] .workspace-shell input:not([type="color"]),
 html[data-theme="dark"] .workspace-shell select,
-html[data-theme="dark"] .workspace-shell textarea,
-html[data-theme="dark"] input:not([type="color"]),
-html[data-theme="dark"] select,
-html[data-theme="dark"] textarea {
+html[data-theme="dark"] .workspace-shell textarea {
   color-scheme: dark;
   border-color: #454155;
   background-color: #211f2d;
   color: #f3f0fa;
 }
 
-html[data-theme="dark"] input::placeholder,
-html[data-theme="dark"] textarea::placeholder {
+html[data-theme="dark"] .workspace-shell input::placeholder,
+html[data-theme="dark"] .workspace-shell textarea::placeholder {
   color: #aaa4b7;
 }
 
-html[data-theme="dark"] .profile-panel,
-html[data-theme="dark"] .glass-panel {
+html[data-theme="dark"] .workspace-shell .profile-panel,
+html[data-theme="dark"] .workspace-shell .glass-panel {
   border-color: #393648;
   background-color: rgb(27 25 38 / 88%);
-}
-
-html[data-theme="dark"] .workspace-shell header,
-html[data-theme="dark"] .workspace-shell .glass-panel {
   color: #f3f0fa;
 }
 
-html[data-theme="dark"] .install-card {
+html[data-theme="dark"] .workspace-shell header {
+  color: #f3f0fa;
+}
+
+html[data-theme="dark"] .workspace-shell .install-card {
   border-color: #393648;
   background-color: #1b1926;
 }
 
-html[data-theme="dark"] .install-instructions {
+html[data-theme="dark"] .workspace-shell .install-instructions {
   border-color: #393648;
   background-color: #242130;
 }
 
-html[data-theme="dark"] .install-instructions h3 {
+html[data-theme="dark"] .workspace-shell .install-instructions h3 {
   color: #f3f0fa;
 }
 
-html[data-theme="dark"] .install-instructions ol,
-html[data-theme="dark"] .install-card > div:last-of-type p {
+html[data-theme="dark"] .workspace-shell .install-instructions ol,
+html[data-theme="dark"] .workspace-shell .install-card > div:last-of-type p {
   color: #b9b3c7;
 }
 
-html[data-theme="dark"] .review-modal-card {
+html[data-theme="dark"] .workspace-shell .review-modal-card {
   border-color: #393648;
   background-color: #1b1926;
+}
+
+/* Public surfaces (landing + auth) are always light */
+.public-surface,
+.public-surface body {
+  color-scheme: light !important;
+  background: #fbfaff !important;
+  color: #17132d !important;
 }
 
 .step-number {

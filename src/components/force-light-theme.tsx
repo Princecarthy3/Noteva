@@ -3,8 +3,8 @@
 import { useEffect, type ReactNode } from "react";
 
 /**
- * Forces the light theme for public marketing / auth surfaces so they
- * never inherit the workspace dark preference.
+ * Locks public marketing / auth surfaces to light theme only.
+ * Workspace theme preference must never affect these pages.
  */
 export function ForceLightTheme({ children }: { children?: ReactNode }) {
   useEffect(() => {
@@ -14,8 +14,12 @@ export function ForceLightTheme({ children }: { children?: ReactNode }) {
 
     root.dataset.theme = "light";
     root.style.colorScheme = "light";
+    root.classList.add("public-surface");
+    document.body?.classList.add("public-surface");
 
     return () => {
+      root.classList.remove("public-surface");
+      document.body?.classList.remove("public-surface");
       if (previousTheme) root.dataset.theme = previousTheme;
       else delete root.dataset.theme;
       root.style.colorScheme = previousScheme;
