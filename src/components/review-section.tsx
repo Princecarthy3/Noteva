@@ -83,7 +83,11 @@ export function ReviewSection() {
         {reviews.length > 0 ? (
           <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {reviews.map((item) => (
-              <article key={item.id} data-card-reveal className="glass-panel flex min-h-[205px] flex-col justify-between rounded-[24px] p-6 shadow-sm">
+              <article
+                key={item.id}
+                data-review-card
+                className="glass-panel flex min-h-[205px] flex-col justify-between rounded-[24px] p-6 shadow-sm opacity-100"
+              >
                 <div>
                   <Stars rating={item.rating} />
                   <MessageSquareQuote className="mt-4 size-5 text-[#7259e8]" />
