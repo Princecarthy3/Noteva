@@ -133,10 +133,10 @@ export function LectureCaptureModal({
       >
         <div className="flex items-center justify-between border-b border-[#ece9f0] px-5 py-4 sm:px-6">
           <div>
-            <h2 id="lecture-upload-title" className="text-[16px] font-extrabold text-[#17132d]">
+            <h2 id="lecture-upload-title" className="text-lg font-extrabold text-[#17132d]">
               Add a lecture
             </h2>
-            <p className="mt-1 text-[9px] text-[#938d9a]">
+            <p className="mt-1 text-xs text-[#938d9a]">
               Record live or upload audio, video, PDF, Word, PowerPoint, or text files
             </p>
           </div>
@@ -164,7 +164,7 @@ export function LectureCaptureModal({
                 type="button"
                 onClick={() => setTab(item.id)}
                 disabled={recording || processing}
-                className={`flex h-9 items-center justify-center gap-2 rounded-lg text-[9px] font-extrabold transition ${
+                className={`flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-extrabold transition ${
                   tab === item.id ? "bg-white text-[#7259e8] shadow-sm" : "text-[#898390]"
                 }`}
               >
@@ -174,23 +174,23 @@ export function LectureCaptureModal({
             ))}
           </div>
 
-          <label className="mt-4 block text-[8px] font-black uppercase tracking-[.1em] text-[#8e8895]">
+          <label className="mt-4 block text-[10px] font-black uppercase tracking-[.1em] text-[#8e8895]">
             Lecture title
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               maxLength={200}
               placeholder="e.g. Week 3 — Cell structure & mitosis"
-              className="mt-2 h-10 w-full rounded-xl border border-[#e2dee8] bg-white px-3 text-[11px] font-medium text-[#17132d] outline-none focus:border-[#7259e8]"
+              className="mt-2 h-10 w-full rounded-xl border border-[#e2dee8] bg-white px-3 text-xs font-medium text-[#17132d] outline-none focus:border-[#7259e8]"
             />
           </label>
 
-          <label className="mt-3 block text-[8px] font-black uppercase tracking-[.1em] text-[#8e8895]">
+          <label className="mt-3 block text-[10px] font-black uppercase tracking-[.1em] text-[#8e8895]">
             Save to course
             <select
               value={courseId}
               onChange={(event) => setCourseId(event.target.value)}
-              className="mt-2 h-10 w-full rounded-xl border border-[#e2dee8] bg-white px-3 text-[10px] font-bold text-[#17132d] outline-none focus:border-[#7259e8]"
+              className="mt-2 h-10 w-full rounded-xl border border-[#e2dee8] bg-white px-3 text-xs font-bold text-[#17132d] outline-none focus:border-[#7259e8]"
             >
               <option value="">Unassigned lecture</option>
               {courses.map((course) => (
@@ -222,10 +222,10 @@ export function LectureCaptureModal({
                 ))}
               </div>
 
-              <p className="mt-2 text-[28px] font-black tabular-nums tracking-[-1px]">
+              <p className="mt-2 text-[30px] font-black tabular-nums tracking-[-1px]">
                 {formattedTime}
               </p>
-              <p className="mt-0.5 text-[9px] font-bold text-white/60">
+              <p className="mt-0.5 text-xs font-bold text-white/70">
                 {recording
                   ? paused ? "Recording paused · Resume when you’re ready" : "Recording in progress · Speak clearly"
                   : recorded
@@ -272,24 +272,24 @@ export function LectureCaptureModal({
               {recording && (
                 <div className="mt-4 space-y-1.5 border-t border-white/10 pt-3.5">
                   <div className="flex flex-wrap items-center justify-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 px-2.5 py-0.5 text-[9px] font-bold text-emerald-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
                       <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       {isWakeLockActive ? "Screen kept awake" : "Keep-awake active"}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-0.5 text-[9px] font-medium text-white/80">
-                      <Radio className="size-2.5 text-indigo-300" />
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/80">
+                      <Radio className="size-3 text-indigo-300" />
                       Background audio active
                     </span>
                   </div>
-                  <p className="text-[9px] text-white/50">
+                  <p className="text-xs text-white/60">
                     Phone screen will stay awake. If your screen sleeps, recording continues seamlessly in the background.
                   </p>
                 </div>
               )}
 
               {!recording && !recorded && (
-                <div className="mt-3 flex items-center justify-center gap-1.5 text-[9px] text-white/50">
-                  <ShieldCheck className="size-3 text-emerald-400" />
+                <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-white/60">
+                  <ShieldCheck className="size-3.5 text-emerald-400" />
                   <span>Keeps screen awake & runs in background</span>
                 </div>
               )}
@@ -299,10 +299,10 @@ export function LectureCaptureModal({
             {recorded && !recording && recordedAudioUrl && (
               <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-[.12em] text-[#7259e8]">
+                  <span className="text-xs font-black uppercase tracking-[.12em] text-[#7259e8]">
                     Review your recording
                   </span>
-                  <span className="text-[9px] font-bold text-[#868093]">
+                  <span className="text-[11px] font-bold text-[#868093]">
                     Listen before transcription
                   </span>
                 </div>
@@ -350,9 +350,9 @@ export function LectureCaptureModal({
                 className="mt-4 rounded-2xl border border-[#e9e5ef] bg-[#faf9fd] p-4 text-left"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-[10px] font-extrabold text-[#373145]">Live transcription</h3>
+                  <h3 className="text-xs font-extrabold text-[#373145]">Live transcription</h3>
                   {recording && !paused && (
-                    <span className="flex items-center gap-1.5 text-[9px] font-bold text-[#7259e8]">
+                    <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#7259e8]">
                       <span className="size-1.5 animate-pulse rounded-full bg-[#7259e8]" />
                       Listening
                     </span>
@@ -365,15 +365,15 @@ export function LectureCaptureModal({
                     <span className="text-[#9993a0]">{interimTranscript}</span>
                   </p>
                 ) : (
-                  <p className="mt-2 text-[10px] leading-4 text-[#8a8494]">
+                  <p className="mt-2 text-xs leading-5 text-[#8a8494]">
                     {recording ? paused ? "Recording is paused." : "Your words will appear here as you speak." : "No live captions were captured."}
                   </p>
                 )}
-                {captionStatus && <p className="mt-2 text-[9px] leading-4 text-[#8a8494]">{captionStatus}</p>}
+                {captionStatus && <p className="mt-2 text-xs leading-5 text-[#8a8494]">{captionStatus}</p>}
               </section>
             )}
 
-            <p className="mt-3 text-center text-[9px] leading-4 text-[#8a8494]">
+            <p className="mt-3 text-center text-xs leading-5 text-[#8a8494]">
               You can listen to your recording above at any time. When you tap &quot;Upload and transcribe&quot;,
               your recording is processed by StudyStation AI to generate your complete lecture notes and study sets.
             </p>
@@ -408,14 +408,14 @@ export function LectureCaptureModal({
                 <h3 className="mt-4 text-[13px] font-extrabold text-[#17132d]">
                   {processing ? "Processing lecture material…" : "Choose audio, video, or lecture document"}
                 </h3>
-                <p className="mt-2 text-center text-[9px] leading-4 text-[#918b98]">
+                <p className="mt-2 text-center text-xs leading-5 text-[#918b98]">
                   Audio / Video (MP3, M4A, WAV, WebM, MP4)
                   <br />
                   or Documents (PDF, Word .docx, PowerPoint .pptx, Markdown, Text)
                   <br />
                   Maximum file size: 150 MB · long lectures are transcribed in parts
                 </p>
-                <span className="mt-4 rounded-xl bg-[#17132d] px-4 py-2.5 text-[9px] font-extrabold text-white">
+                <span className="mt-4 rounded-xl bg-[#17132d] px-4 py-2.5 text-xs font-extrabold text-white">
                   Browse files
                 </span>
               </button>
@@ -532,18 +532,18 @@ export function LectureCaptureModal({
               </div>
             )}
 
-            <div className="mt-3 flex items-center justify-center gap-4 text-[8px] text-[#9993a0]">
+            <div className="mt-3 flex items-center justify-center gap-4 text-xs text-[#9993a0]">
               <span className="flex items-center gap-1">
-                <FileAudio className="size-3" />
+                <FileAudio className="size-3.5" />
                 Audio
               </span>
               <span className="flex items-center gap-1">
-                <FileVideo className="size-3" />
+                <FileVideo className="size-3.5" />
                 Video
               </span>
               <span>Private storage</span>
             </div>
-            <p className="mt-3 text-center text-[9px] leading-4 text-[#8a8494]">
+            <p className="mt-3 text-center text-xs leading-5 text-[#8a8494]">
               Only upload media you have permission to process. Files are stored privately and processed with StudyStation AI.
             </p>
           </div>

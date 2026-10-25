@@ -22,7 +22,7 @@ async function getOwnedLecture(id: string) {
 
   const { data: lecture, error } = await supabase
     .from("lectures")
-    .select("id, title, source_type, mime_type, storage_path, status, transcript, processing_error, created_at, updated_at, course_id")
+    .select("id, title, source_type, mime_type, storage_path, status, transcript, processing_error, created_at, updated_at, course_id, duration_seconds")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -59,6 +59,7 @@ export async function GET(_request: Request, context: RouteContext) {
       mimeType: result.lecture.mime_type,
       status: result.lecture.status,
       transcript: result.lecture.transcript,
+      durationSeconds: result.lecture.duration_seconds ?? null,
       processingError: result.lecture.processing_error,
       createdAt: result.lecture.created_at,
       updatedAt: result.lecture.updated_at,

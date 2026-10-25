@@ -15,6 +15,7 @@ import {
   FileText,
   Layers3,
   LoaderCircle,
+  Maximize2,
   Pencil,
   Plus,
   RefreshCw,
@@ -628,7 +629,16 @@ export function LectureStudio({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [fullScreenDoc, setFullScreenDoc] = useState(false);
   const courseNames = useMemo(() => new Map(courses.map((course) => [course.id, `${course.code} · ${course.title}`])), [courses]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setFullScreenDoc(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const fetchLectureDetail = useCallback(async (id: string) => {
     const response = await fetch(`/api/lectures/${id}`);
@@ -680,10 +690,10 @@ export function LectureStudio({
   }, [busy, error, fetchLectureDetail, lectures, selected?.id]);
 
   useEffect(() => {
-    if (!autoOpenLectureId || !lectures.some((lecture) => lecture.id === autoOpenLectureId)) return;
+    if (!autoOpenLectureId) return;
     onAutoOpen();
     void openLecture(autoOpenLectureId);
-  }, [autoOpenLectureId, lectures, onAutoOpen, openLecture]);
+  }, [autoOpenLectureId, onAutoOpen, openLecture]);
 
   // Auto-open the most recent ready lecture once when the studio mounts with data.
   const didAutoOpenRef = useRef(false);
@@ -889,12 +899,12 @@ export function LectureStudio({
 
   return <div className="fade-up">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-      <div><p className="text-[10px] font-black uppercase tracking-[.15em] text-[#7259e8]">Lecture Studio</p><h1 className="mt-1 text-[25px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[29px]">Your lecture library</h1><p className="mt-1.5 max-w-2xl text-[12px] leading-5 text-[#7d7789]">Upload authorized audio or video recordings, or lecture documents (PDF, Word, PPT, text). Content is parsed and organized into comprehensive study notes with AI.</p></div>
-      <button type="button" onClick={onUpload} className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl bg-[#7259e8] px-4 text-[11px] font-extrabold text-white sm:self-auto"><Upload className="size-4" /> Add a lecture</button>
+      <div><p className="text-xs font-black uppercase tracking-[.15em] text-[#7259e8]">Lecture Studio</p><h1 className="mt-1 text-[27px] font-black tracking-[-1.1px] text-[#17132d] sm:text-[32px]">Your lecture library</h1><p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#7d7789]">Upload authorized audio or video recordings, or lecture documents (PDF, Word, PPT, text). Content is parsed and organized into comprehensive study notes with AI.</p></div>
+      <button type="button" onClick={onUpload} className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white sm:self-auto"><Upload className="size-4" /> Add a lecture</button>
     </div>
     <div className="mt-5 grid gap-5 xl:grid-cols-[.72fr_1.28fr]">
       <section className="rounded-[24px] border border-[#e9e5ef] bg-white p-4 sm:p-5">
-        <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-extrabold">Recent lectures</h2><span className="text-[10px] text-[#8a8494]">{sortedLectures.length}</span></div>
+        <div className="mb-4 flex items-center justify-between"><h2 className="text-base font-extrabold">Recent lectures</h2><span className="text-xs font-bold text-[#8a8494]">{sortedLectures.length}</span></div>
         {loadError ? <SectionError>Lecture history could not be loaded. Check the Stage 4 migration and refresh.</SectionError> : sortedLectures.length ? <ul className="space-y-2">{sortedLectures.map((lecture) => {
             const isActive = selected?.id === lecture.id;
             return (
@@ -912,15 +922,15 @@ export function LectureStudio({
                   className={`flex cursor-pointer items-center gap-2 rounded-2xl border p-3 transition ${isActive ? "border-[#c8bcf2] bg-[#f8f6ff] shadow-sm" : "border-[#f0edf4] hover:border-[#d9d0f5] hover:bg-[#fbfaff]"}`}
                 >
                   <div className="min-w-0 flex-1 text-left">
-                    <span className="block truncate text-xs font-extrabold">{lecture.title}</span>
-                    <span className="mt-1 block truncate text-[10px] text-[#85808d]">{lecture.sourceType === "document" ? "Document" : lecture.sourceType === "video" ? "Video" : lecture.sourceType === "audio" ? "Audio" : "Recording"} · {lecture.courseId ? courseNames.get(lecture.courseId) ?? "Course" : "Unassigned"} · {displayDate(lecture.createdAt, timezone)}</span>
+                    <span className="block truncate text-sm font-extrabold">{lecture.title}</span>
+                    <span className="mt-1 block truncate text-xs text-[#85808d]">{lecture.sourceType === "document" ? "Document" : lecture.sourceType === "video" ? "Video" : lecture.sourceType === "audio" ? "Audio" : "Recording"} · {lecture.courseId ? courseNames.get(lecture.courseId) ?? "Course" : "Unassigned"} · {displayDate(lecture.createdAt, timezone)}</span>
                     {lecture.note && (
-                      <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-[#f3f0ff] px-1.5 py-0.5 text-[8px] font-extrabold text-[#7259e8]">
-                        <Sparkles className="size-2.5" /> Notes ready
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-[#f3f0ff] px-2 py-0.5 text-[10px] font-extrabold text-[#7259e8]">
+                        <Sparkles className="size-3" /> Notes ready
                       </span>
                     )}
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase ${lecture.status === "ready" ? "bg-[#e5f7ed] text-[#2f946f]" : lecture.status === "failed" ? "bg-[#fff0ee] text-[#ae544d]" : "bg-[#fff4db] text-[#9b741f]"}`}>{lecture.status}</span>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${lecture.status === "ready" ? "bg-[#e5f7ed] text-[#2f946f]" : lecture.status === "failed" ? "bg-[#fff0ee] text-[#ae544d]" : "bg-[#fff4db] text-[#9b741f]"}`}>{lecture.status}</span>
                   {lecture.status !== "ready" && lecture.status !== "processing" && (
                     <button type="button" disabled={busy} aria-label={`Retry ${lecture.title}`} onClick={(event) => { event.stopPropagation(); void retryLecture(lecture.id); }} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#7259e8] hover:bg-[#f1edff] disabled:opacity-50">
                       <RefreshCw className="size-3.5" />
@@ -954,30 +964,30 @@ export function LectureStudio({
         ) : <>
           <div className="flex flex-col justify-between gap-3 border-b border-[#eeeaf2] pb-4 sm:flex-row sm:items-start">
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-[.12em] text-[#7259e8]">{selected.sourceType} · {selected.status}</p>
-              <h2 className="mt-1 truncate text-lg font-black">{selected.title}</h2>
-              <p className="mt-1 text-[10px] text-[#85808d]">{displayDate(selected.createdAt, timezone, true)}{selected.courseId ? ` · ${courseNames.get(selected.courseId) ?? "Course"}` : ""}</p>
+              <p className="text-[11px] font-black uppercase tracking-[.12em] text-[#7259e8]">{selected.sourceType} · {selected.status}</p>
+              <h2 className="mt-1 truncate text-lg sm:text-xl font-black">{selected.title}</h2>
+              <p className="mt-1 text-xs text-[#85808d]">{displayDate(selected.createdAt, timezone, true)}{selected.courseId ? ` · ${courseNames.get(selected.courseId) ?? "Course"}` : ""}</p>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {selected.status === "ready" && selected.transcript && (
                 <>
                   {selected.note ? (
                     <>
-                      <button type="button" onClick={exportNotePdfAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-[#f5f2ff] px-2.5 text-[9px] font-extrabold text-[#7259e8] hover:bg-[#ece7ff] shadow-sm"><FileDown className="size-3.5" /> Export PDF</button>
-                      <button type="button" onClick={copyNoteMarkdownAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[9px] font-bold hover:bg-[#faf9fd]"><Clipboard className="size-3.5" /> Copy Notes</button>
-                      <button type="button" onClick={downloadNoteMarkdownAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[9px] font-bold hover:bg-[#faf9fd]"><Download className="size-3.5" /> Download .md</button>
-                      <button type="button" disabled={generatingNotes} onClick={() => void generateNotes()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[9px] font-bold hover:bg-[#faf9fd] disabled:opacity-50">
+                      <button type="button" onClick={exportNotePdfAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-[#f5f2ff] px-2.5 text-[11px] font-extrabold text-[#7259e8] hover:bg-[#ece7ff] shadow-sm"><FileDown className="size-3.5" /> Export PDF</button>
+                      <button type="button" onClick={copyNoteMarkdownAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[11px] font-bold hover:bg-[#faf9fd]"><Clipboard className="size-3.5" /> Copy Notes</button>
+                      <button type="button" onClick={downloadNoteMarkdownAction} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[11px] font-bold hover:bg-[#faf9fd]"><Download className="size-3.5" /> Download .md</button>
+                      <button type="button" disabled={generatingNotes} onClick={() => void generateNotes()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] px-2.5 text-[11px] font-bold hover:bg-[#faf9fd] disabled:opacity-50">
                         {generatingNotes ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Regenerate Notes
                       </button>
                     </>
                   ) : (
-                    <button type="button" disabled={generatingNotes} onClick={() => void generateNotes()} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-3 text-[9px] font-black text-white shadow-sm hover:bg-[#6045de] disabled:opacity-50">
+                    <button type="button" disabled={generatingNotes} onClick={() => void generateNotes()} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-3 text-[11px] font-black text-white shadow-sm hover:bg-[#6045de] disabled:opacity-50">
                       {generatingNotes ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Generate AI Notes
                     </button>
                   )}
                 </>
               )}
-              {selected.status !== "ready" && <button type="button" disabled={busy} onClick={() => void retryLecture(selected.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-2.5 text-[9px] font-extrabold text-white disabled:opacity-50"><RefreshCw className="size-3.5" /> Retry</button>}
+              {selected.status !== "ready" && <button type="button" disabled={busy} onClick={() => void retryLecture(selected.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-2.5 text-[11px] font-extrabold text-white disabled:opacity-50"><RefreshCw className="size-3.5" /> Retry</button>}
             </div>
           </div>
 
@@ -992,29 +1002,41 @@ export function LectureStudio({
                 />
               </div>
             ) : selected.sourceType === "document" ? (
-              <div className="flex items-center gap-3 rounded-2xl border border-[#e4ddfa] bg-[#faf8ff] p-4">
-                <div className="grid size-10 place-items-center rounded-xl bg-[#ede8ff] text-[#7259e8]">
-                  <FileText className="size-5" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-[#e4ddfa] bg-[#faf8ff] p-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#ede8ff] text-[#7259e8]">
+                    <FileText className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-[#1e1730]">Document Lecture Material</p>
+                    <p className="text-xs text-[#7e778b]">View the original uploaded file alongside its generated notes</p>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-[#1e1730]">Document Lecture Material</p>
-                  <p className="text-[10px] text-[#7e778b]">View the original uploaded file alongside its generated notes</p>
-                </div>
-                {selected.mediaUrl && (
-                  <a
-                    href={selected.mediaUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    download
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-white px-2.5 text-[9px] font-bold text-[#7259e8] hover:bg-[#f5f2ff]"
+                <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setFullScreenDoc(true)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-[#f5f2ff] px-3 text-xs font-black text-[#7259e8] hover:bg-[#ece7ff] shadow-sm transition"
                   >
-                    <Download className="size-3.5" /> Download original
-                  </a>
-                )}
+                    <Maximize2 className="size-3.5" /> Full Screen
+                  </button>
+                  {selected.mediaUrl && (
+                    <a
+                      href={selected.mediaUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      download
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-white px-2.5 text-xs font-bold text-[#7259e8] hover:bg-[#f5f2ff]"
+                    >
+                      <Download className="size-3.5" /> Download
+                    </a>
+                  )}
+                </div>
               </div>
             ) : (
               <AudioPlayer
                 src={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
+                fallbackSrc={`/api/lectures/${selected.id}/media`}
                 title={selected.title}
                 variant="card"
                 durationHintSeconds={selected.durationSeconds ?? undefined}
@@ -1100,21 +1122,44 @@ export function LectureStudio({
                 </div>
               )}
 
-              {/* Tab 2: Raw Transcript */}
+              {/* Tab 2: Raw Transcript / Document */}
               {studioTab === "transcript" && selected.sourceType === "document" && (
                 <div className="mt-4 overflow-hidden rounded-2xl border border-[#e9e5ef] bg-[#fdfcff]">
+                  <div className="flex items-center justify-between border-b border-[#ece8f4] bg-[#faf9fe] px-4 py-2.5">
+                    <div className="flex items-center gap-2 text-xs font-extrabold text-[#2a2440]">
+                      <FileText className="size-4 text-[#7259e8]" />
+                      <span>Original Document Preview</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFullScreenDoc(true)}
+                        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#cfc4f6] bg-white px-2.5 text-xs font-bold text-[#7259e8] hover:bg-[#f5f2ff] shadow-sm transition"
+                      >
+                        <Maximize2 className="size-3" /> Full Screen
+                      </button>
+                      <a
+                        href={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-[#e6e2eb] bg-white px-2 text-xs font-bold text-[#555064] hover:bg-[#fbfaff]"
+                      >
+                        New tab
+                      </a>
+                    </div>
+                  </div>
                   {selected.mediaUrl ? (
                     <iframe title={`Original file: ${selected.title}`} src={selected.mediaUrl} className="h-[min(65vh,700px)] w-full bg-white" />
                   ) : (
-                    <p className="p-6 text-xs text-[#7e778b]">The original file preview is unavailable.</p>
+                    <iframe title={`Original file: ${selected.title}`} src={`/api/lectures/${selected.id}/media`} className="h-[min(65vh,700px)] w-full bg-white" />
                   )}
                 </div>
               )}
               {studioTab === "transcript" && selected.sourceType !== "document" && (
                 <>
                   <div className="mt-4 flex items-center justify-between">
-                    <p className="text-[9px] font-black uppercase tracking-[.12em] text-[#8a8494]">Original transcript · editable</p>
-                    {dirty && <span className="text-[9px] font-bold text-[#a16b17]">Unsaved changes</span>}
+                    <p className="text-[11px] font-black uppercase tracking-[.12em] text-[#8a8494]">Original transcript · editable</p>
+                    {dirty && <span className="text-[11px] font-bold text-[#a16b17]">Unsaved changes</span>}
                   </div>
                   <textarea
                     aria-label="Lecture transcript"
@@ -1127,12 +1172,12 @@ export function LectureStudio({
                     className="mt-2 min-h-[310px] w-full resize-y rounded-2xl border border-[#e9e5ef] bg-[#fdfcff] p-4 text-xs leading-6 text-[#403b4b] outline-none focus:border-[#c9bdf1]"
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">
-                    <span className="text-[9px] text-[#8a8494]">{transcriptDraft.length.toLocaleString()} / 500,000 characters</span>
+                    <span className="text-[11px] text-[#8a8494]">{transcriptDraft.length.toLocaleString()} / 500,000 characters</span>
                     <button
                       type="button"
                       disabled={!dirty || busy || !transcriptDraft.trim()}
                       onClick={() => void saveTranscript()}
-                      className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#7259e8] px-3 text-[10px] font-extrabold text-white disabled:opacity-50"
+                      className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#7259e8] px-3.5 text-xs font-extrabold text-white disabled:opacity-50"
                     >
                       {busy && <LoaderCircle className="size-3.5 animate-spin" />} Save transcript
                     </button>
@@ -1146,7 +1191,61 @@ export function LectureStudio({
         {notice && <p role="status" className="mt-3 rounded-xl bg-[#e8f7ef] px-3 py-2.5 text-xs text-[#2f946f]">{notice}</p>}
       </section>
     </div>
-    <p className="mt-4 text-[10px] leading-5 text-[#8a8494]">Only upload lecture materials you have permission to use. Original files are kept in your private account; audio and video are sent to your configured transcription provider.</p>
+    <p className="mt-4 text-xs leading-5 text-[#8a8494]">Only upload lecture materials you have permission to use. Original files are kept in your private account; audio and video are sent to your configured transcription provider.</p>
+
+    {/* Full Screen Document / PDF Modal */}
+    {fullScreenDoc && selected && selected.sourceType === "document" && (
+      <div className="fixed inset-0 z-[120] flex flex-col bg-[#12101e]/90 p-2 sm:p-4 backdrop-blur-md animate-in fade-in">
+        {/* Top Bar */}
+        <div className="mb-2 flex items-center justify-between rounded-2xl border border-white/10 bg-[#1d192e] px-4 py-3 text-white shadow-xl">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#7259e8] text-white">
+              <FileText className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="truncate text-sm sm:text-base font-black">{selected.title}</h3>
+              <p className="text-xs text-[#a9a2bc]">Original Document Preview · Full Screen</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 transition"
+            >
+              Open in Tab
+            </a>
+            <a
+              href={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
+              target="_blank"
+              rel="noreferrer"
+              download
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 transition"
+            >
+              <Download className="size-3.5" /> Download
+            </a>
+            <button
+              type="button"
+              onClick={() => setFullScreenDoc(false)}
+              className="grid size-8 place-items-center rounded-xl bg-white/10 text-white hover:bg-white/20 transition"
+              aria-label="Exit Full Screen"
+              title="Exit Full Screen (Esc)"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+        </div>
+        {/* Iframe */}
+        <div className="flex-1 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl">
+          <iframe
+            title={`Full screen: ${selected.title}`}
+            src={selected.mediaUrl || `/api/lectures/${selected.id}/media`}
+            className="h-full w-full border-0 bg-white"
+          />
+        </div>
+      </div>
+    )}
   </div>;
 }
 

@@ -37,6 +37,7 @@ type UploadRequest = {
   mimeType?: unknown;
   fileSize?: unknown;
   sourceType?: unknown;
+  durationSeconds?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -124,6 +125,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Private lecture storage is unavailable. Check that the Stage 4 migration is applied." }, { status: 503 });
   }
 
+  const durationSeconds =
+    typeof body.durationSeconds === "number" && Number.isFinite(body.durationSeconds) && body.durationSeconds > 0
+      ? Math.round(body.durationSeconds)
+      : null;
+
   const { error: insertError } = await admin.from("lectures").insert({
     id: lectureId,
     user_id: user.id,
@@ -133,6 +139,7 @@ export async function POST(request: Request) {
     storage_path: storagePath,
     mime_type: mimeType,
     status: "uploaded",
+    duration_seconds: durationSeconds,
   });
   if (insertError) {
     const isSchemaMismatch =

@@ -40,6 +40,7 @@ import {
   ListChecks,
   LoaderCircle,
   MapPin,
+  Maximize2,
   Menu,
   MessageSquareText,
   Mic2,
@@ -606,7 +607,7 @@ export function AppShell({
     setInterimTranscript("");
   }
 
-  async function submitLecture(file: File, requestedTitle?: string, sourceType?: "recording") {
+  async function submitLecture(file: File, requestedTitle?: string, sourceType?: "recording", durationSeconds?: number) {
     setProcessing(true);
     try {
       const derivedFromFile = file.name
@@ -639,6 +640,7 @@ export function AppShell({
           mimeType: file.type,
           fileSize: file.size,
           sourceType,
+          durationSeconds: durationSeconds ?? (sourceType === "recording" && recordingSeconds > 0 ? recordingSeconds : undefined),
         }),
       });
       const created = (await createResponse.json()) as {
@@ -743,7 +745,8 @@ export function AppShell({
     await submitLecture(
       new File([recordedBlob], `live-recording.${extension}`, { type: recordedBlob.type }),
       title?.trim() || lectureTitle.trim() || fallbackTitle,
-      "recording"
+      "recording",
+      recordingSeconds
     );
   }
 
@@ -1573,6 +1576,15 @@ function FunctionalNoteModal({
   const [generating, setGenerating] = useState(false);
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [copiedNote, setCopiedNote] = useState(false);
+  const [fullScreenDoc, setFullScreenDoc] = useState(false);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setFullScreenDoc(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   async function generateNotes() {
     if (!lecture.transcript) return;
@@ -1743,30 +1755,41 @@ function FunctionalNoteModal({
           <div className="p-6 sm:p-8 space-y-6">
             {/* Audio Recording Player or Document Card */}
             {lecture.sourceType === "document" ? (
-              <div className="flex items-center gap-3 rounded-2xl border border-[#e4ddfa] bg-[#faf8ff] p-4">
-                <div className="grid size-10 place-items-center rounded-xl bg-[#ede8ff] text-[#7259e8]">
-                  <FileText className="size-5" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-[#e4ddfa] bg-[#faf8ff] p-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#ede8ff] text-[#7259e8]">
+                    <FileText className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-[#1e1730]">Document Lecture Material</p>
+                    <p className="text-xs text-[#7e778b]">Extracted directly into study notes, flashcards, and quizzes</p>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-[#1e1730]">Document Lecture Material</p>
-                  <p className="text-[10px] text-[#7e778b]">Extracted directly into study notes, flashcards, and quizzes</p>
-                </div>
-                {lecture.mediaUrl && (
+                <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setFullScreenDoc(true)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-[#f5f2ff] px-3 text-xs font-black text-[#7259e8] hover:bg-[#ece7ff] shadow-sm transition"
+                  >
+                    <Maximize2 className="size-3.5" /> Full Screen
+                  </button>
                   <a
                     href={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
                     target="_blank"
                     rel="noreferrer"
                     download
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-white px-2.5 text-[9px] font-bold text-[#7259e8] hover:bg-[#f5f2ff]"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-white px-2.5 text-xs font-bold text-[#7259e8] hover:bg-[#f5f2ff]"
                   >
                     <Download className="size-3.5" /> Download original
                   </a>
-                )}
+                </div>
               </div>
             ) : (
               <AudioPlayer
-                src={`/api/lectures/${lecture.id}/media`}
+                src={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
+                fallbackSrc={`/api/lectures/${lecture.id}/media`}
                 title={lecture.title}
+                durationHintSeconds={lecture.durationSeconds ?? undefined}
                 variant="card"
               />
             )}
@@ -1832,6 +1855,29 @@ function FunctionalNoteModal({
               /* Raw transcript tab */
               lecture.sourceType === "document" ? (
                 <div className="overflow-hidden rounded-2xl border border-[#e4ddfa] bg-[#faf8ff]">
+                  <div className="flex items-center justify-between border-b border-[#ece8f4] bg-[#faf9fe] px-4 py-2.5">
+                    <div className="flex items-center gap-2 text-xs font-extrabold text-[#2a2440]">
+                      <FileText className="size-4 text-[#7259e8]" />
+                      <span>Original Document Preview</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFullScreenDoc(true)}
+                        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#cfc4f6] bg-white px-2.5 text-xs font-bold text-[#7259e8] hover:bg-[#f5f2ff] shadow-sm transition"
+                      >
+                        <Maximize2 className="size-3" /> Full Screen
+                      </button>
+                      <a
+                        href={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-[#e6e2eb] bg-white px-2 text-xs font-bold text-[#555064] hover:bg-[#fbfaff]"
+                      >
+                        New tab
+                      </a>
+                    </div>
+                  </div>
                   <iframe title={`Original file: ${lecture.title}`} src={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`} className="h-[min(65vh,700px)] w-full bg-white" />
                 </div>
               ) : lecture.transcript ? (
@@ -1965,6 +2011,60 @@ function FunctionalNoteModal({
           </aside>
         </div>
       </div>
+
+      {/* Full Screen Document / PDF Modal */}
+      {fullScreenDoc && lecture.sourceType === "document" && (
+        <div className="fixed inset-0 z-[120] flex flex-col bg-[#12101e]/90 p-2 sm:p-4 backdrop-blur-md animate-in fade-in">
+          {/* Top Bar */}
+          <div className="mb-2 flex items-center justify-between rounded-2xl border border-white/10 bg-[#1d192e] px-4 py-3 text-white shadow-xl">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#7259e8] text-white">
+                <FileText className="size-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="truncate text-sm sm:text-base font-black">{lecture.title}</h3>
+                <p className="text-xs text-[#a9a2bc]">Original Document Preview · Full Screen</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 transition"
+              >
+                Open in Tab
+              </a>
+              <a
+                href={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
+                target="_blank"
+                rel="noreferrer"
+                download
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20 transition"
+              >
+                <Download className="size-3.5" /> Download
+              </a>
+              <button
+                type="button"
+                onClick={() => setFullScreenDoc(false)}
+                className="grid size-8 place-items-center rounded-xl bg-white/10 text-white hover:bg-white/20 transition"
+                aria-label="Exit Full Screen"
+                title="Exit Full Screen (Esc)"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+          </div>
+          {/* Iframe */}
+          <div className="flex-1 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl">
+            <iframe
+              title={`Full screen: ${lecture.title}`}
+              src={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
+              className="h-full w-full border-0 bg-white"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

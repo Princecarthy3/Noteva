@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const { id } = await context.params;
   if (!uuidPattern.test(id)) {
     return NextResponse.json({ error: "Lecture not found." }, { status: 404 });
@@ -41,13 +41,13 @@ export async function GET(_request: Request, context: RouteContext) {
   // Generate a signed URL from private bucket
   const { data: signedData, error: signError } = await supabase.storage
     .from("lecture-media")
-    .createSignedUrl(lecture.storage_path, 3600);
+    .createSignedUrl(lecture.storage_path, 7200);
 
   if (!signError && signedData?.signedUrl) {
-    return NextResponse.redirect(signedData.signedUrl);
+    return NextResponse.redirect(signedData.signedUrl, 302);
   }
 
-  // Fallback: download directly and stream response
+  // Fallback: download directly and stream response with Range support
   const { data: object, error: downloadError } = await supabase.storage
     .from("lecture-media")
     .download(lecture.storage_path);
@@ -56,11 +56,39 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Media file could not be read." }, { status: 500 });
   }
 
-  return new Response(object, {
+  const mimeType = lecture.mime_type || "audio/webm";
+  const filename = encodeURIComponent(lecture.title || "lecture-media");
+  const buffer = Buffer.from(await object.arrayBuffer());
+  const fileSize = buffer.length;
+  const rangeHeader = request.headers.get("range");
+
+  if (rangeHeader) {
+    const parts = rangeHeader.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10) || 0;
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunkSize = end - start + 1;
+    const chunk = buffer.subarray(start, end + 1);
+
+    return new Response(chunk, {
+      status: 206,
+      headers: {
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunkSize.toString(),
+        "Content-Type": mimeType,
+        "Cache-Control": "private, max-age=3600",
+        "Content-Disposition": `inline; filename="${filename}"`,
+      },
+    });
+  }
+
+  return new Response(buffer, {
     headers: {
-      "Content-Type": lecture.mime_type || "audio/webm",
+      "Content-Type": mimeType,
+      "Content-Length": fileSize.toString(),
+      "Accept-Ranges": "bytes",
       "Cache-Control": "private, max-age=3600",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(lecture.title || "lecture-media")}"`,
+      "Content-Disposition": `inline; filename="${filename}"`,
     },
   });
 }
