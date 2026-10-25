@@ -174,6 +174,7 @@ export function AppShell({
   plannerData,
 }: {
   profile: {
+    id?: string;
     fullName: string;
     email: string;
     programme: string;
@@ -182,6 +183,7 @@ export function AppShell({
     timezone: string;
     avatarUrl: string | null;
     avatarPath: string;
+    workspaceTourCompleted?: boolean;
   };
   dashboardData: Stage6DashboardData;
   plannerData: PlannerData;
@@ -1139,7 +1141,9 @@ export function AppShell({
       {reviewModalOpen && <ReviewModal onClose={() => setReviewModalOpen(false)} />}
 
       <AppTour
+        userId={profile.id}
         firstName={firstName}
+        tourCompleted={Boolean(profile.workspaceTourCompleted)}
         onNavigate={(next) => {
           setView(next as View);
           setSelectedCourseId(null);

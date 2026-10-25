@@ -53,6 +53,7 @@ export const profiles = pgTable("profiles", {
   avatarUrl: text("avatar_url"),
   onboardingComplete: boolean("onboarding_complete").default(false).notNull(),
   onboardingStep: smallint("onboarding_step").default(0).notNull(),
+  workspaceTourCompleted: boolean("workspace_tour_completed").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

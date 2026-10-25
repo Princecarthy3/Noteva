@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 
-const TOUR_STORAGE_KEY = "studystation-app-tour-v1";
+const TOUR_STORAGE_PREFIX = "studystation-app-tour-v2:";
 
 export type TourStep = {
   id: string;
@@ -69,17 +68,21 @@ const TOUR_STEPS: TourStep[] = [
 type Rect = { top: number; left: number; width: number; height: number };
 type Phase = "welcome" | "steps";
 
-function readCompleted() {
+function storageKey(userId?: string | null) {
+  return `${TOUR_STORAGE_PREFIX}${userId || "anon"}`;
+}
+
+function readLocalCompleted(userId?: string | null) {
   try {
-    return window.localStorage.getItem(TOUR_STORAGE_KEY) === "1";
+    return window.localStorage.getItem(storageKey(userId)) === "1";
   } catch {
     return false;
   }
 }
 
-function markCompleted() {
+function markLocalCompleted(userId?: string | null) {
   try {
-    window.localStorage.setItem(TOUR_STORAGE_KEY, "1");
+    window.localStorage.setItem(storageKey(userId), "1");
   } catch {
     // ignore
   }
@@ -87,24 +90,29 @@ function markCompleted() {
 
 function LogoMark({ size = 36 }: { size?: number }) {
   return (
-    <Image
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       src="/logo.png"
       alt=""
       width={size}
       height={size}
       className="shrink-0 rounded-[11px] object-cover"
       style={{ width: size, height: size }}
-      priority
     />
   );
 }
 
 export function AppTour({
+  userId,
   firstName,
+  tourCompleted = false,
   onNavigate,
   onOpenSidebar,
 }: {
+  userId?: string | null;
   firstName?: string;
+  /** From the server profile. False for new accounts. */
+  tourCompleted?: boolean;
   onNavigate: (view: string) => void;
   onOpenSidebar?: () => void;
 }) {
@@ -134,15 +142,24 @@ export function AppTour({
     el.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [phase, step]);
 
+  // Start automatically for accounts that have not finished the tour.
   useEffect(() => {
-    if (readCompleted()) return;
+    const params = new URLSearchParams(window.location.search);
+    const force = params.get("tour") === "1" || params.get("tour") === "true";
+    const localDone = readLocalCompleted(userId);
+    const shouldStart = force || (!tourCompleted && !localDone);
+
+    if (!shouldStart) return;
+
+    // Brief delay so the workspace chrome is painted first.
     const timer = window.setTimeout(() => {
       setPhase("welcome");
       setStepIndex(0);
       setActive(true);
-    }, 550);
+    }, 400);
+
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [tourCompleted, userId]);
 
   useEffect(() => {
     if (!active || phase !== "steps" || !step) return;
@@ -170,9 +187,12 @@ export function AppTour({
   }, [active, phase, stepIndex, measure]);
 
   const finish = useCallback(() => {
-    markCompleted();
+    markLocalCompleted(userId);
     setActive(false);
-  }, []);
+    void fetch("/api/workspace-tour", { method: "POST", cache: "no-store" }).catch(() => {
+      // local completion is enough to stop reopening on this device
+    });
+  }, [userId]);
 
   const startSteps = useCallback(() => {
     setPhase("steps");
@@ -372,9 +392,11 @@ export function AppTour({
   );
 }
 
-export function resetAppTour() {
+export function resetAppTour(userId?: string | null) {
   try {
-    window.localStorage.removeItem(TOUR_STORAGE_KEY);
+    window.localStorage.removeItem(storageKey(userId));
+    // legacy key from earlier versions
+    window.localStorage.removeItem("studystation-app-tour-v1");
   } catch {
     // ignore
   }

@@ -37,15 +37,39 @@ async function ProtectedWorkspace() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) redirect("/auth/login?next=/app");
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, programme, university, current_semester, timezone, avatar_url, onboarding_complete")
-    .eq("id", user.id)
-    .maybeSingle();
+  let profile: {
+    full_name: string;
+    programme: string | null;
+    university: string | null;
+    current_semester: string | null;
+    timezone: string | null;
+    avatar_url: string | null;
+    onboarding_complete: boolean | null;
+    workspace_tour_completed?: boolean | null;
+  } | null = null;
 
-  if (profileError) {
-    return <SetupState message="Your profile database is not ready. Apply the Stage 4 and Stage 5 migrations to your Supabase project, then reload." />;
+  {
+    const withTour = await supabase
+      .from("profiles")
+      .select("full_name, programme, university, current_semester, timezone, avatar_url, onboarding_complete, workspace_tour_completed")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (withTour.error) {
+      const withoutTour = await supabase
+        .from("profiles")
+        .select("full_name, programme, university, current_semester, timezone, avatar_url, onboarding_complete")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (withoutTour.error) {
+        return <SetupState message="Your profile database is not ready. Apply the Stage 4 and Stage 5 migrations to your Supabase project, then reload." />;
+      }
+      profile = withoutTour.data;
+    } else {
+      profile = withTour.data;
+    }
   }
+
   if (!profile?.onboarding_complete) redirect("/onboarding");
 
   let avatarUrl: string | null = null;
@@ -276,7 +300,11 @@ async function ProtectedWorkspace() {
     },
   };
 
+  // If the tour column is not migrated yet, treat as incomplete so the tour still runs.
+  const workspaceTourCompleted = Boolean((profile as { workspace_tour_completed?: boolean | null }).workspace_tour_completed);
+
   return <AppShell profile={{
+    id: user.id,
     fullName: profile.full_name,
     email: user.email ?? "",
     programme: profile.programme ?? "",
@@ -285,6 +313,7 @@ async function ProtectedWorkspace() {
     timezone: profile.timezone || "UTC",
     avatarUrl,
     avatarPath,
+    workspaceTourCompleted,
   }} dashboardData={dashboardData} plannerData={plannerData} />;
 }
 

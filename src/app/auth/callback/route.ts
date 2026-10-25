@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
           avatar_url: avatarUrl,
           onboarding_step: 0,
           onboarding_complete: false,
+          workspace_tour_completed: false,
         });
       } else if (avatarUrl) {
         await supabase
