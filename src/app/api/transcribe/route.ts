@@ -6,7 +6,7 @@ import { extractDocumentText } from "@/lib/document-extractor";
 import { MAX_LECTURE_MEDIA_BYTES } from "@/lib/audio-chunker";
 
 export const runtime = "nodejs";
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 const MAX_FILE_SIZE = MAX_LECTURE_MEDIA_BYTES;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

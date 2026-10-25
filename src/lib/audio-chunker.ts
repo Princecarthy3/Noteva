@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 /** Target length per transcription chunk (seconds). */
 export const CHUNK_SECONDS = 10 * 60;
@@ -31,9 +33,9 @@ function cleanMime(mimeType: string) {
 
 function resolveFfmpegPath(): string | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const ffmpegStatic = require("ffmpeg-static") as string | null;
-    if (ffmpegStatic) return ffmpegStatic;
+    const req = createRequire(fileURLToPath(import.meta.url));
+    const ffmpegStatic = req("ffmpeg-static") as string | null;
+    if (typeof ffmpegStatic === "string" && ffmpegStatic.length > 0) return ffmpegStatic;
   } catch {
     // optional dependency at runtime
   }
