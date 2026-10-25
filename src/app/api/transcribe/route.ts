@@ -3,12 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTranscriptionConfigurationError, transcribeLectureMedia, type LectureMediaType } from "@/lib/transcription";
 import { extractDocumentText } from "@/lib/document-extractor";
-import { MAX_LECTURE_MEDIA_BYTES } from "@/lib/media-limits";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const MAX_FILE_SIZE = MAX_LECTURE_MEDIA_BYTES;
+const MAX_FILE_SIZE = 150 * 1024 * 1024;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type ProcessRequest = { lectureId?: unknown };
 
@@ -155,10 +154,7 @@ export async function POST(request: Request) {
       onProgress: async (message) => {
         await admin
           .from("lectures")
-          .update({
-            processing_error: message,
-            updated_at: new Date().toISOString(),
-          })
+          .update({ processing_error: message, updated_at: new Date().toISOString() })
           .eq("id", lecture.id)
           .eq("user_id", user.id)
           .eq("status", "processing");
