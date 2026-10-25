@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_FILE_SIZE = 150 * 1024 * 1024;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const supportedFiles: Record<string, { sourceType: "audio" | "video" | "recording" | "document"; extensions: string[] }> = {
   "audio/mpeg": { sourceType: "audio", extensions: ["mp3"] },
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "The selected file is empty or invalid." }, { status: 400 });
   }
   if (fileSize > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "Lecture files must be 25 MB or smaller." }, { status: 413 });
+    return NextResponse.json({ error: "Lecture files must be 150 MB or smaller." }, { status: 413 });
   }
 
   const extension = fileName.split(".").pop()?.toLowerCase() ?? "";

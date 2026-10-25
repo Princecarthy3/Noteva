@@ -1093,7 +1093,7 @@ export function LectureStudio({
                       setTranscriptDraft(event.target.value);
                       setDirty(true);
                     }}
-                    maxLength={500_000}
+                    maxLength={1_500_000}
                     className="mt-2 min-h-[310px] w-full resize-y rounded-2xl border border-[#e9e5ef] bg-[#fdfcff] p-4 text-xs leading-6 text-[#403b4b] outline-none focus:border-[#c9bdf1]"
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">

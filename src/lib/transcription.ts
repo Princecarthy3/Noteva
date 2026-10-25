@@ -73,7 +73,7 @@ async function transcribeWithGroq(input: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: formData,
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(240_000),
   });
 
   const data = (await response.json()) as { text?: string; error?: { message?: string } };
@@ -126,7 +126,7 @@ async function transcribeWithGemini(input: {
         responseMimeType: "application/json",
       },
     }),
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(240_000),
   });
 
   const data = (await response.json()) as {
@@ -199,14 +199,13 @@ async function transcribeWithMultimodalAI(input: {
   throw new Error("The AI provider did not return a valid transcript.");
 }
 
-export async function transcribeLectureMedia(input: {
+async function transcribeSingleBuffer(input: {
   bytes: Buffer;
-  mimeType: string;
+  cleanMime: string;
   sourceType: LectureMediaType;
   title: string;
   courseTitle: string;
-}): Promise<NormalizedTranscript> {
-  const cleanMime = input.mimeType.toLowerCase().split(";")[0].trim();
+}): Promise<string> {
   let text = "";
   const errors: string[] = [];
 
@@ -215,7 +214,7 @@ export async function transcribeLectureMedia(input: {
     try {
       text = await transcribeWithGroq({
         bytes: input.bytes,
-        cleanMime,
+        cleanMime: input.cleanMime,
       });
     } catch (groqError) {
       const msg = groqError instanceof Error ? groqError.message : String(groqError);
@@ -229,7 +228,7 @@ export async function transcribeLectureMedia(input: {
     try {
       text = await transcribeWithGemini({
         bytes: input.bytes,
-        cleanMime,
+        cleanMime: input.cleanMime,
         title: input.title,
         courseTitle: input.courseTitle,
       });
@@ -243,7 +242,7 @@ export async function transcribeLectureMedia(input: {
   // 3. Fallback to OpenRouter if configured and has credits
   if (!text && hasOpenRouterKey()) {
     const whisperModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
-    const audioFormat = audioFormats[cleanMime];
+    const audioFormat = audioFormats[input.cleanMime];
 
     if (whisperModel && audioFormat && input.sourceType !== "video") {
       try {
@@ -262,7 +261,7 @@ export async function transcribeLectureMedia(input: {
       try {
         text = await transcribeWithMultimodalAI({
           bytes: input.bytes,
-          cleanMime,
+          cleanMime: input.cleanMime,
           title: input.title,
           courseTitle: input.courseTitle,
         });
@@ -276,12 +275,65 @@ export async function transcribeLectureMedia(input: {
 
   if (!text || !text.trim()) {
     if (errors.length > 0) {
-      // Pick the most relevant error to show the user
-      const primaryError = errors[0];
-      throw new Error(`Transcription failed: ${primaryError}`);
+      throw new Error(`Transcription failed: ${errors[0]}`);
     }
     throw new Error("No speech could be detected in this recording, or transcription is not configured. Add a free GROQ_API_KEY in .env.local.");
   }
 
-  return { text: text.trim(), segments: null, language: null };
+  return text.trim();
+}
+
+export async function transcribeLectureMedia(input: {
+  bytes: Buffer;
+  mimeType: string;
+  sourceType: LectureMediaType;
+  title: string;
+  courseTitle: string;
+  onProgress?: (message: string) => void | Promise<void>;
+}): Promise<NormalizedTranscript> {
+  const { splitMediaForTranscription } = await import("@/lib/audio-chunker");
+  const chunks = await splitMediaForTranscription({
+    bytes: input.bytes,
+    mimeType: input.mimeType,
+  });
+
+  if (chunks.length === 1) {
+    await input.onProgress?.("Transcribing lecture…");
+    const text = await transcribeSingleBuffer({
+      bytes: chunks[0].bytes,
+      cleanMime: chunks[0].mimeType,
+      sourceType: input.sourceType,
+      title: input.title,
+      courseTitle: input.courseTitle,
+    });
+    return { text, segments: null, language: null };
+  }
+
+  const parts: string[] = [];
+  for (const chunk of chunks) {
+    await input.onProgress?.(
+      `Transcribing part ${chunk.index + 1} of ${chunk.total}…`,
+    );
+    const partTitle = `${input.title} (part ${chunk.index + 1}/${chunk.total})`;
+    const text = await transcribeSingleBuffer({
+      bytes: chunk.bytes,
+      cleanMime: chunk.mimeType,
+      sourceType: input.sourceType === "video" ? "audio" : input.sourceType,
+      title: partTitle,
+      courseTitle: input.courseTitle,
+    });
+    if (text) parts.push(text);
+  }
+
+  if (!parts.length) {
+    throw new Error("No speech could be detected across the lecture chunks.");
+  }
+
+  return {
+    text: parts.join("
+
+").trim(),
+    segments: null,
+    language: null,
+  };
 }

@@ -610,9 +610,9 @@ export function AppShell({
 
   async function handleUpload(file?: File, title?: string) {
     if (!file) return;
-    const maxSize = 25 * 1024 * 1024;
+    const maxSize = 150 * 1024 * 1024;
     if (file.size > maxSize) {
-      showToast("Lecture files must be 25 MB or smaller.", "error");
+      showToast("Lecture files must be 150 MB or smaller.", "error");
       return;
     }
     await submitLecture(file, title);

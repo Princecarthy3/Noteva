@@ -80,7 +80,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   } catch {
     return NextResponse.json({ error: "The transcript update was not valid." }, { status: 400 });
   }
-  if (typeof body.transcript !== "string" || body.transcript.trim().length === 0 || body.transcript.length > 500_000) {
+  if (typeof body.transcript !== "string" || body.transcript.trim().length === 0 || body.transcript.length > 1_500_000) {
     return NextResponse.json({ error: "Transcript text must be between 1 and 500,000 characters." }, { status: 400 });
   }
   if (result.lecture.status !== "ready") {

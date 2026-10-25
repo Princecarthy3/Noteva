@@ -3,11 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTranscriptionConfigurationError, transcribeLectureMedia, type LectureMediaType } from "@/lib/transcription";
 import { extractDocumentText } from "@/lib/document-extractor";
+import { MAX_LECTURE_MEDIA_BYTES } from "@/lib/audio-chunker";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_FILE_SIZE = MAX_LECTURE_MEDIA_BYTES;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type ProcessRequest = { lectureId?: unknown };
 
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
       .from("lecture-media")
       .download(lecture.storage_path);
     if (downloadError || !object) throw new Error("The uploaded file could not be read.");
-    if (object.size < 1 || object.size > MAX_FILE_SIZE) throw new Error("The uploaded file is empty or exceeds the 25 MB limit.");
+    if (object.size < 1 || object.size > MAX_FILE_SIZE) throw new Error("The uploaded file is empty or exceeds the 150 MB limit.");
 
     const bytes = Buffer.from(await object.arrayBuffer());
 
@@ -151,10 +152,21 @@ export async function POST(request: Request) {
       sourceType: lecture.source_type,
       title: lecture.title,
       courseTitle,
+      onProgress: async (message) => {
+        await admin
+          .from("lectures")
+          .update({
+            processing_error: message,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", lecture.id)
+          .eq("user_id", user.id)
+          .eq("status", "processing");
+      },
     });
     const cleanTranscript = result.text;
     if (!cleanTranscript) throw new Error("No speech was detected in the uploaded media.");
-    if (cleanTranscript.length > 500_000) throw new Error("The transcript is larger than the supported limit.");
+    if (cleanTranscript.length > 1_500_000) throw new Error("The transcript is larger than the supported limit.");
 
     const { error: saveError } = await admin
       .from("lectures")

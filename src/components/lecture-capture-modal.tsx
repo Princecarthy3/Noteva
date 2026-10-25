@@ -383,7 +383,7 @@ export function LectureCaptureModal({
                   <br />
                   or Documents (PDF, Word .docx, PowerPoint .pptx, Markdown, Text)
                   <br />
-                  Maximum file size: 25 MB
+                  Maximum file size: 150 MB · long lectures are transcribed in parts
                 </p>
                 <span className="mt-4 rounded-xl bg-[#17132d] px-4 py-2.5 text-[9px] font-extrabold text-white">
                   Browse files
