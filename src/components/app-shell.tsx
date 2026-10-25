@@ -1139,6 +1139,7 @@ export function AppShell({
       {reviewModalOpen && <ReviewModal onClose={() => setReviewModalOpen(false)} />}
 
       <AppTour
+        firstName={firstName}
         onNavigate={(next) => {
           setView(next as View);
           setSelectedCourseId(null);
