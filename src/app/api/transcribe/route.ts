@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTranscriptionConfigurationError, transcribeLectureMedia, type LectureMediaType } from "@/lib/transcription";
 import { extractDocumentText } from "@/lib/document-extractor";
-import { MAX_LECTURE_MEDIA_BYTES } from "@/lib/audio-chunker";
+import { MAX_LECTURE_MEDIA_BYTES } from "@/lib/media-limits";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;

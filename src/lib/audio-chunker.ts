@@ -3,12 +3,9 @@ import { mkdtemp, readFile, rm, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-/** Target length per transcription chunk (seconds). */
-export const CHUNK_SECONDS = 10 * 60;
-/** Prefer keeping each provider upload under this size. */
-export const CHUNK_MAX_BYTES = 20 * 1024 * 1024;
-/** Overall lecture media limit (supports ~2h compressed audio). */
-export const MAX_LECTURE_MEDIA_BYTES = 150 * 1024 * 1024;
+import { CHUNK_MAX_BYTES, CHUNK_SECONDS, MAX_LECTURE_MEDIA_BYTES } from "@/lib/media-limits";
+
+export { CHUNK_MAX_BYTES, CHUNK_SECONDS, MAX_LECTURE_MEDIA_BYTES };
 
 const extensionByMime: Record<string, string> = {
   "audio/mpeg": "mp3",
