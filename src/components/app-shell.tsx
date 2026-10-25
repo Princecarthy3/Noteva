@@ -94,6 +94,7 @@ import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/clie
 import { AudioPlayer } from "@/components/audio-player";
 import { LectureCaptureModal } from "@/components/lecture-capture-modal";
 import { ReviewModal } from "@/components/review-section";
+import { AppTour } from "@/components/app-tour";
 import { exportNoteToPdf } from "@/lib/pdf-export";
 
 type View =
@@ -733,6 +734,7 @@ export function AppShell({
                 </p>
               )}
               <button
+                data-tour-id={item.id}
                 onClick={() => navigate(item.id)}
                 className={`mb-1 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[12px] font-bold transition ${
                   view === item.id
@@ -1135,6 +1137,15 @@ export function AppShell({
       )}
 
       {reviewModalOpen && <ReviewModal onClose={() => setReviewModalOpen(false)} />}
+
+      <AppTour
+        onNavigate={(next) => {
+          setView(next as View);
+          setSelectedCourseId(null);
+        }}
+        onOpenSidebar={() => setSidebarOpen(true)}
+      />
+
 
       {toast && (
         <div
