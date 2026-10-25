@@ -96,6 +96,7 @@ import { LectureCaptureModal } from "@/components/lecture-capture-modal";
 import { ReviewModal } from "@/components/review-section";
 import { AppTour } from "@/components/app-tour";
 import { exportNoteToPdf } from "@/lib/pdf-export";
+import { BackgroundRecordingManager } from "@/lib/background-recording";
 
 type View =
   | "dashboard"
@@ -236,9 +237,11 @@ export function AppShell({
 
   const [courseValue, setCourseValue] = useState("");
   const [lectureTitle, setLectureTitle] = useState("");
+  const [isWakeLockActive, setIsWakeLockActive] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const backgroundRecordingRef = useRef<BackgroundRecordingManager | null>(null);
   const recordingPausedRef = useRef(false);
   const chunksRef = useRef<Blob[]>([]);
   const liveTranscriptRef = useRef("");
@@ -330,13 +333,53 @@ export function AppShell({
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
+  // Update background recording session metadata when lecture title changes
   useEffect(() => {
-    if (!isRecording || isRecordingPaused) return;
-    const interval = window.setInterval(() => setRecordingSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(interval);
+    if (isRecording && backgroundRecordingRef.current) {
+      backgroundRecordingRef.current.updateOptions({ title: lectureTitle });
+    }
+  }, [lectureTitle, isRecording]);
+
+  // Wall-clock accurate elapsed timer that does not drift or freeze when phone sleeps/locks
+  useEffect(() => {
+    if (!isRecording) return;
+    const syncTimer = () => {
+      if (backgroundRecordingRef.current) {
+        setRecordingSeconds(backgroundRecordingRef.current.getElapsedSeconds());
+      }
+    };
+    const interval = window.setInterval(syncTimer, 1000);
+    const handleVisOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        syncTimer();
+        // If mediaRecorder paused unexpectedly while in background/sleep (and not user-paused), resume!
+        if (
+          !recordingPausedRef.current &&
+          mediaRecorderRef.current &&
+          mediaRecorderRef.current.state === "paused"
+        ) {
+          try {
+            mediaRecorderRef.current.resume();
+          } catch (e) {
+            console.warn("[Recording] Failed to auto-resume on visibilitychange:", e);
+          }
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisOrFocus);
+    window.addEventListener("focus", handleVisOrFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisOrFocus);
+      window.removeEventListener("focus", handleVisOrFocus);
+    };
   }, [isRecording, isRecordingPaused]);
 
-  useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+  useEffect(() => () => {
+    backgroundRecordingRef.current?.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
 
   const navigate = useCallback((next: View) => {
     setView(next);
@@ -351,38 +394,107 @@ export function AppShell({
         showToast("Live recording isn’t supported in this browser. Try uploading a file instead.", "error");
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       streamRef.current = stream;
       chunksRef.current = [];
       liveTranscriptRef.current = "";
       setLiveTranscript("");
       setInterimTranscript("");
-      const preferredType = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find((type) =>
+
+      // Keep tracks resilient against background interruptions
+      stream.getAudioTracks().forEach((track) => {
+        track.onended = () => {
+          console.warn("[Recording] Audio track ended unexpectedly.");
+        };
+        track.onmute = () => {
+          console.warn("[Recording] Audio track muted by system/phone sleep.");
+        };
+        track.onunmute = () => {
+          console.log("[Recording] Audio track unmuted by system.");
+          if (
+            !recordingPausedRef.current &&
+            mediaRecorderRef.current &&
+            mediaRecorderRef.current.state === "paused"
+          ) {
+            try {
+              mediaRecorderRef.current.resume();
+            } catch {}
+          }
+        };
+      });
+
+      const preferredType = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/aac"].find((type) =>
         MediaRecorder.isTypeSupported(type)
       );
       const recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined);
+
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
+
       recorder.onstop = () => {
+        backgroundRecordingRef.current?.stop();
+        setIsWakeLockActive(false);
         setRecordedBlob(new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }));
         stream.getTracks().forEach((track) => track.stop());
         setIsRecording(false);
         setIsRecordingPaused(false);
         recordingPausedRef.current = false;
       };
+
+      // Resilient auto-resume if OS pauses recorder on phone sleep/lock unexpectedly
+      recorder.onpause = () => {
+        if (!recordingPausedRef.current && mediaRecorderRef.current?.state === "paused") {
+          console.warn("[Recording] MediaRecorder paused unexpectedly by system. Auto-resuming...");
+          try {
+            mediaRecorderRef.current.resume();
+          } catch (e) {
+            console.warn("[Recording] Failed to auto-resume paused recorder:", e);
+          }
+        }
+      };
+
       mediaRecorderRef.current = recorder;
       setRecordingSeconds(0);
       setRecordedBlob(null);
       recordingPausedRef.current = false;
       setIsRecordingPaused(false);
+
+      // Start recording with 1-second chunks for continuous streaming data
       recorder.start(1000);
       setIsRecording(true);
 
+      // Initialize Screen Wake Lock & Background Audio Keep-Alive
+      const manager = new BackgroundRecordingManager({
+        title: lectureTitle.trim() || "Lecture Recording",
+        onStopRequest: () => {
+          stopRecording();
+        },
+        onPauseRequest: () => {
+          pauseRecording();
+        },
+        onResumeRequest: () => {
+          resumeRecording();
+        },
+        onStateChange: ({ elapsedSeconds, isWakeLockActive: wakeActive }) => {
+          setRecordingSeconds(elapsedSeconds);
+          setIsWakeLockActive(wakeActive);
+        },
+      });
+      backgroundRecordingRef.current = manager;
+      await manager.start(recorder);
+
+      // Optional live speech captions
       const speechWindow = window as SpeechRecognitionWindow;
       const SpeechRecognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        setCaptionStatus("Live captions are not supported in this browser. The recording can still be transcribed after you stop.");
+        setCaptionStatus("Live captions are not supported in this browser. The recording will still be fully transcribed after you stop.");
         return;
       }
 
@@ -409,7 +521,7 @@ export function AppShell({
           ? "Allow speech recognition in your browser to see live captions. Your recording is still in progress."
           : event.error === "network"
             ? "Live captions lost their connection. Your recording is still in progress."
-            : "Live captions stopped. Your recording is still in progress.";
+            : "Live captions paused. Your recording continues uninterrupted in the background.";
         setCaptionStatus(status);
       };
       recognition.onend = () => {
@@ -424,12 +536,12 @@ export function AppShell({
         recognitionRef.current = null;
       };
       recognitionRef.current = recognition;
-      setCaptionStatus("Live captions are on. Captions use your browser's speech recognition service.");
+      setCaptionStatus("Live captions are on. Screen will remain awake and recording continues in the background.");
       try {
         recognition.start();
       } catch {
         recognitionRef.current = null;
-        setCaptionStatus("Live captions could not start in this browser. The recording can still be transcribed after you stop.");
+        setCaptionStatus("Live captions could not start in this browser. The recording will still be fully transcribed after you stop.");
       }
     } catch {
       showToast("Microphone access was blocked. Allow access or upload a lecture file.", "error");
@@ -438,6 +550,7 @@ export function AppShell({
 
   function pauseRecording() {
     if (mediaRecorderRef.current?.state !== "recording") return;
+    backgroundRecordingRef.current?.pause();
     mediaRecorderRef.current.pause();
     recordingPausedRef.current = true;
     setIsRecordingPaused(true);
@@ -447,6 +560,7 @@ export function AppShell({
 
   function resumeRecording() {
     if (mediaRecorderRef.current?.state !== "paused") return;
+    backgroundRecordingRef.current?.resume();
     mediaRecorderRef.current.resume();
     recordingPausedRef.current = false;
     setIsRecordingPaused(false);
@@ -461,6 +575,8 @@ export function AppShell({
   }
 
   function stopRecording() {
+    backgroundRecordingRef.current?.stop();
+    setIsWakeLockActive(false);
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
@@ -470,7 +586,9 @@ export function AppShell({
   }
 
   function resetRecording() {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+    backgroundRecordingRef.current?.stop();
+    setIsWakeLockActive(false);
+    if (mediaRecorderRef.current && (mediaRecorderRef.current.state === "recording" || mediaRecorderRef.current.state === "paused")) {
       mediaRecorderRef.current.stop();
     }
     if (recognitionRef.current) {
@@ -1104,6 +1222,7 @@ export function AppShell({
           setTitle={setLectureTitle}
           recording={isRecording}
           paused={isRecordingPaused}
+          isWakeLockActive={isWakeLockActive}
           seconds={recordingSeconds}
           recorded={recordedBlob}
           liveTranscript={liveTranscript}

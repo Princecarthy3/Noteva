@@ -110,6 +110,8 @@ export type Stage6Lecture = {
   note?: OrganizedNoteData | null;
   sourceType?: string | null;
   mediaUrl?: string | null;
+  processingError?: string | null;
+  processing_error?: string | null;
 };
 
 export type Stage6DashboardData = {

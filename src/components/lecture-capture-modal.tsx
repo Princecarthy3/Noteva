@@ -10,7 +10,9 @@ import {
   Mic2,
   Pause,
   Play,
+  Radio,
   RotateCcw,
+  ShieldCheck,
   Sparkles,
   Square,
   Upload,
@@ -33,6 +35,7 @@ export function LectureCaptureModal({
   setTitle,
   recording,
   paused,
+  isWakeLockActive,
   seconds,
   recorded,
   liveTranscript,
@@ -58,6 +61,7 @@ export function LectureCaptureModal({
   setTitle: (title: string) => void;
   recording: boolean;
   paused: boolean;
+  isWakeLockActive?: boolean;
   seconds: number;
   recorded: Blob | null;
   liveTranscript: string;
@@ -263,6 +267,32 @@ export function LectureCaptureModal({
                   </>
                 )}
               </div>
+
+              {/* Keep Awake & Background Recording Status */}
+              {recording && (
+                <div className="mt-4 space-y-1.5 border-t border-white/10 pt-3.5">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 px-2.5 py-0.5 text-[9px] font-bold text-emerald-300">
+                      <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      {isWakeLockActive ? "Screen kept awake" : "Keep-awake active"}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-0.5 text-[9px] font-medium text-white/80">
+                      <Radio className="size-2.5 text-indigo-300" />
+                      Background audio active
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-white/50">
+                    Phone screen will stay awake. If your screen sleeps, recording continues seamlessly in the background.
+                  </p>
+                </div>
+              )}
+
+              {!recording && !recorded && (
+                <div className="mt-3 flex items-center justify-center gap-1.5 text-[9px] text-white/50">
+                  <ShieldCheck className="size-3 text-emerald-400" />
+                  <span>Keeps screen awake & runs in background</span>
+                </div>
+              )}
             </div>
 
             {/* PRE-TRANSCRIPTION AUDIO PLAYER: Listen before uploading! */}
