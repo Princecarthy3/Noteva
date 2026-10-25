@@ -73,7 +73,7 @@ async function transcribeWithGroq(input: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: formData,
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(240_000),
   });
 
   const data = (await response.json()) as { text?: string; error?: { message?: string } };
@@ -126,7 +126,7 @@ async function transcribeWithGemini(input: {
         responseMimeType: "application/json",
       },
     }),
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(240_000),
   });
 
   const data = (await response.json()) as {
@@ -199,89 +199,193 @@ async function transcribeWithMultimodalAI(input: {
   throw new Error("The AI provider did not return a valid transcript.");
 }
 
+
+const PROVIDER_CHUNK_BYTES = 20 * 1024 * 1024;
+
+async function splitLongMedia(bytes: Buffer, mimeType: string): Promise<Array<{ bytes: Buffer; mimeType: string }>> {
+  const mime = mimeType.toLowerCase().split(";")[0].trim();
+  if (bytes.length <= PROVIDER_CHUNK_BYTES) {
+    return [{ bytes, mimeType: mime }];
+  }
+
+  // WAV can be split without ffmpeg.
+  if ((mime === "audio/wav" || mime === "audio/x-wav") && bytes.length >= 44) {
+    const header = bytes.subarray(0, 44);
+    const data = bytes.subarray(44);
+    const piece = Math.max(1_000_000, PROVIDER_CHUNK_BYTES - 44);
+    const chunks: Array<{ bytes: Buffer; mimeType: string }> = [];
+    for (let offset = 0; offset < data.length; offset += piece) {
+      const body = data.subarray(offset, offset + piece);
+      const out = Buffer.alloc(44 + body.length);
+      header.copy(out, 0, 0, 44);
+      out.writeUInt32LE(36 + body.length, 4);
+      out.writeUInt32LE(body.length, 40);
+      body.copy(out, 44);
+      chunks.push({ bytes: out, mimeType: mime });
+    }
+    return chunks.length ? chunks : [{ bytes, mimeType: mime }];
+  }
+
+  // Try ffmpeg segmentation for compressed formats when available on the server.
+  try {
+    const { spawn } = await import("node:child_process");
+    const { mkdtemp, readFile, rm, writeFile, readdir } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+
+    const ext =
+      mime.includes("mpeg") || mime.includes("mp3") ? "mp3" :
+      mime.includes("mp4") || mime.includes("m4a") ? "m4a" :
+      mime.includes("ogg") ? "ogg" :
+      mime.includes("flac") ? "flac" :
+      mime.includes("wav") ? "wav" : "webm";
+
+    const dir = await mkdtemp(path.join(tmpdir(), "ss-chunks-"));
+    const inputPath = path.join(dir, `source.${ext}`);
+    const pattern = path.join(dir, "chunk-%03d.wav");
+    try {
+      await writeFile(inputPath, bytes);
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn("ffmpeg", [
+          "-hide_banner", "-loglevel", "error", "-y",
+          "-i", inputPath,
+          "-ac", "1", "-ar", "16000",
+          "-f", "segment", "-segment_time", "600",
+          "-reset_timestamps", "1",
+          pattern,
+        ], { stdio: ["ignore", "pipe", "pipe"] });
+        let stderr = "";
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          reject(new Error("Audio segmentation timed out."));
+        }, 8 * 60_000);
+        child.stderr.on("data", (c) => { stderr += String(c); });
+        child.on("error", (err) => { clearTimeout(timer); reject(err); });
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          if (code === 0) resolve();
+          else reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+        });
+      });
+
+      const files = (await readdir(dir)).filter((n) => n.startsWith("chunk-") && n.endsWith(".wav")).sort();
+      const chunks: Array<{ bytes: Buffer; mimeType: string }> = [];
+      for (const file of files) {
+        const part = await readFile(path.join(dir, file));
+        if (part.length > 1000) chunks.push({ bytes: part, mimeType: "audio/wav" });
+      }
+      if (chunks.length) return chunks;
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  } catch (error) {
+    console.warn("Long-media segmentation unavailable:", error instanceof Error ? error.message : error);
+  }
+
+  // Fallback: single pass if still under hard provider-ish ceiling, else fail clearly.
+  if (bytes.length <= 25 * 1024 * 1024) {
+    return [{ bytes, mimeType: mime }];
+  }
+  throw new Error(
+    "This lecture is too long for a single transcription pass. Compress it under ~25 MB per part, or ensure ffmpeg is available on the server for automatic splitting.",
+  );
+}
+
 export async function transcribeLectureMedia(input: {
   bytes: Buffer;
   mimeType: string;
   sourceType: LectureMediaType;
   title: string;
   courseTitle: string;
+  onProgress?: (message: string) => void | Promise<void>;
 }): Promise<NormalizedTranscript> {
-  const cleanMime = input.mimeType.toLowerCase().split(";")[0].trim();
-  let text = "";
-  const errors: string[] = [];
+  const chunks = await splitLongMedia(input.bytes, input.mimeType);
 
-  // 1. Try Groq Cloud Whisper first if GROQ_API_KEY is configured (Fastest, 100% free)
-  if (process.env.GROQ_API_KEY?.trim()) {
-    try {
-      text = await transcribeWithGroq({
-        bytes: input.bytes,
-        cleanMime,
-      });
-    } catch (groqError) {
-      const msg = groqError instanceof Error ? groqError.message : String(groqError);
-      console.warn("Groq transcription failed, trying next provider:", msg);
-      errors.push(`Groq: ${msg}`);
-    }
-  }
+  async function transcribeOne(bytes: Buffer, cleanMime: string, title: string): Promise<string> {
+    let text = "";
+    const errors: string[] = [];
 
-  // 2. Try Google Gemini API if GEMINI_API_KEY is configured (Free, multimodal)
-  if (!text && process.env.GEMINI_API_KEY?.trim()) {
-    try {
-      text = await transcribeWithGemini({
-        bytes: input.bytes,
-        cleanMime,
-        title: input.title,
-        courseTitle: input.courseTitle,
-      });
-    } catch (geminiError) {
-      const msg = geminiError instanceof Error ? geminiError.message : String(geminiError);
-      console.warn("Gemini transcription failed, trying next provider:", msg);
-      errors.push(`Gemini: ${msg}`);
-    }
-  }
-
-  // 3. Fallback to OpenRouter if configured and has credits
-  if (!text && hasOpenRouterKey()) {
-    const whisperModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
-    const audioFormat = audioFormats[cleanMime];
-
-    if (whisperModel && audioFormat && input.sourceType !== "video") {
+    if (process.env.GROQ_API_KEY?.trim()) {
       try {
-        const result = await openRouterTranscribe(input.bytes.toString("base64"), audioFormat);
-        if (result.text && result.text.trim()) {
-          text = result.text.trim();
-        }
-      } catch (whisperError) {
-        const msg = whisperError instanceof Error ? whisperError.message : String(whisperError);
-        console.warn("OpenRouter Whisper transcription failed:", msg);
-        errors.push(`OpenRouter Whisper: ${msg}`);
+        text = await transcribeWithGroq({ bytes, cleanMime });
+      } catch (groqError) {
+        const msg = groqError instanceof Error ? groqError.message : String(groqError);
+        console.warn("Groq transcription failed, trying next provider:", msg);
+        errors.push(`Groq: ${msg}`);
       }
     }
 
-    if (!text) {
+    if (!text && process.env.GEMINI_API_KEY?.trim()) {
       try {
-        text = await transcribeWithMultimodalAI({
-          bytes: input.bytes,
+        text = await transcribeWithGemini({
+          bytes,
           cleanMime,
-          title: input.title,
+          title,
           courseTitle: input.courseTitle,
         });
-      } catch (multimodalError) {
-        const msg = multimodalError instanceof Error ? multimodalError.message : String(multimodalError);
-        console.warn("OpenRouter multimodal transcription failed:", msg);
-        errors.push(`OpenRouter Multimodal: ${msg}`);
+      } catch (geminiError) {
+        const msg = geminiError instanceof Error ? geminiError.message : String(geminiError);
+        console.warn("Gemini transcription failed, trying next provider:", msg);
+        errors.push(`Gemini: ${msg}`);
       }
     }
-  }
 
-  if (!text || !text.trim()) {
-    if (errors.length > 0) {
-      // Pick the most relevant error to show the user
-      const primaryError = errors[0];
-      throw new Error(`Transcription failed: ${primaryError}`);
+    if (!text && hasOpenRouterKey()) {
+      const whisperModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
+      const audioFormat = audioFormats[cleanMime];
+      if (whisperModel && audioFormat && input.sourceType !== "video") {
+        try {
+          const result = await openRouterTranscribe(bytes.toString("base64"), audioFormat);
+          if (result.text && result.text.trim()) text = result.text.trim();
+        } catch (whisperError) {
+          const msg = whisperError instanceof Error ? whisperError.message : String(whisperError);
+          console.warn("OpenRouter Whisper transcription failed:", msg);
+          errors.push(`OpenRouter Whisper: ${msg}`);
+        }
+      }
+      if (!text) {
+        try {
+          text = await transcribeWithMultimodalAI({
+            bytes,
+            cleanMime,
+            title,
+            courseTitle: input.courseTitle,
+          });
+        } catch (multimodalError) {
+          const msg = multimodalError instanceof Error ? multimodalError.message : String(multimodalError);
+          console.warn("OpenRouter multimodal transcription failed:", msg);
+          errors.push(`OpenRouter Multimodal: ${msg}`);
+        }
+      }
     }
-    throw new Error("No speech could be detected in this recording, or transcription is not configured. Add a free GROQ_API_KEY in .env.local.");
+
+    if (!text || !text.trim()) {
+      if (errors.length > 0) throw new Error(`Transcription failed: ${errors[0]}`);
+      throw new Error("No speech could be detected in this recording, or transcription is not configured. Add a free GROQ_API_KEY in .env.local.");
+    }
+    return text.trim();
   }
 
-  return { text: text.trim(), segments: null, language: null };
+  if (chunks.length === 1) {
+    await input.onProgress?.("Transcribing lecture…");
+    const text = await transcribeOne(chunks[0].bytes, chunks[0].mimeType, input.title);
+    return { text, segments: null, language: null };
+  }
+
+  const parts: string[] = [];
+  for (let i = 0; i < chunks.length; i += 1) {
+    await input.onProgress?.(`Transcribing part ${i + 1} of ${chunks.length}…`);
+    const part = await transcribeOne(
+      chunks[i].bytes,
+      chunks[i].mimeType,
+      `${input.title} (part ${i + 1}/${chunks.length})`,
+    );
+    if (part) parts.push(part);
+  }
+
+  if (!parts.length) {
+    throw new Error("No speech could be detected across the lecture chunks.");
+  }
+
+  return { text: parts.join("\n\n").trim(), segments: null, language: null };
 }
