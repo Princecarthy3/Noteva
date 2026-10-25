@@ -696,6 +696,28 @@ export function LectureStudio({
     }
   }, [autoOpenLectureId, busy, lectures, openLecture, selected]);
 
+  // Poll while any lecture (or the selected one) is processing so long transcriptions show live part progress.
+  useEffect(() => {
+    const hasProcessing =
+      lectures.some((l) => l.status === "processing") || selected?.status === "processing";
+    if (!hasProcessing) return;
+    const timer = setInterval(() => {
+      router.refresh();
+      if (selected?.status === "processing" && selected.id) {
+        void fetchLectureDetail(selected.id)
+          .then((lecture) => {
+            setSelected(lecture);
+            if (lecture.status === "ready" && lecture.transcript) {
+              setTranscriptDraft(lecture.transcript);
+              setStudioTab(lecture.note ? "notes" : "transcript");
+            }
+          })
+          .catch(() => undefined);
+      }
+    }, 8_000);
+    return () => clearInterval(timer);
+  }, [lectures, selected?.id, selected?.status, router, fetchLectureDetail]);
+
   async function saveTranscript() {
     if (!selected) return;
     setBusy(true);
@@ -998,7 +1020,13 @@ export function LectureStudio({
             )}
           </div>
 
-          {selected.status === "processing" && <p className="mt-4 rounded-xl bg-[#fff5df] px-3 py-2.5 text-xs text-[#8e6d25]">Transcription is in progress. Refresh this page in a moment to check its status.</p>}
+          {selected.status === "processing" && (
+            <p className="mt-4 rounded-xl bg-[#fff5df] px-3 py-2.5 text-xs leading-5 text-[#8e6d25]">
+              {selected.processingError && !selected.processingError.toLowerCase().includes("fail")
+                ? selected.processingError
+                : "Transcription is in progress for this lecture. Long recordings are processed in parts — this page will refresh automatically."}
+            </p>
+          )}
           {selected.status === "uploaded" && <p className="mt-4 rounded-xl bg-[#f2efff] px-3 py-2.5 text-xs text-[#5d4cb7]">Your upload is private and ready to process. Configure your server transcription key (GROQ_API_KEY) if processing is not set up yet.</p>}
           {selected.status === "failed" && <p className="mt-4 rounded-xl bg-[#fff1ef] px-3 py-2.5 text-xs leading-5 text-[#a44e48]">{selected.processingError || "This lecture could not be processed. Your private media is retained; retry when the provider is available."}</p>}
 

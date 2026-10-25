@@ -544,13 +544,34 @@ export function AppShell({
         throw new Error("The file could not be uploaded to private storage. Check your connection and try again.");
       }
 
+      const isDoc = /\.(pdf|docx|doc|pptx|ppt|txt|md|rtf)$/i.test(file.name);
+      const isLikelyLong = !isDoc && file.size > 20 * 1024 * 1024;
+
+      // For long media, kick off transcription and return control to the UI immediately.
+      // The server keeps running (up to maxDuration), writes part progress into processing_error,
+      // and the Lecture Studio polls so the user can watch "Transcribing part X of Y…".
+      if (isLikelyLong) {
+        void fetch("/api/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lectureId: created.lectureId }),
+        }).catch(() => undefined);
+        setModal(null);
+        setView("lectures");
+        setAutoOpenLectureId(created.lectureId);
+        setLectureTitle("");
+        setRecordedBlob(null);
+        showToast("Long lecture uploaded. Transcription is running in parts — open the lecture to watch progress.", "info");
+        router.refresh();
+        return;
+      }
+
       const processResponse = await fetch("/api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lectureId: created.lectureId }),
       });
       const processed = (await processResponse.json()) as { error?: string; status?: string };
-      const isDoc = /\.(pdf|docx|doc|pptx|ppt|txt|md|rtf)$/i.test(file.name);
       if (!processResponse.ok) {
         setModal(null);
         setView("lectures");
@@ -1681,7 +1702,9 @@ function FunctionalNoteModal({
                   <h4 className="mt-3 text-sm font-extrabold text-[#17132d]">Transcript status: {lecture.status}</h4>
                   <p className="mt-1 text-xs text-[#827c8e]">
                     {lecture.status === "processing"
-                      ? "Audio is currently being transcribed with Whisper AI. Please check back shortly."
+                      ? (lecture.processingError && !String(lecture.processingError).toLowerCase().includes("fail")
+                          ? String(lecture.processingError)
+                          : "Long lectures are transcribed in parts with Whisper AI. This can take several minutes — progress updates automatically.")
                       : "No transcript generated yet for this recording. You can retry it from Lecture Studio."}
                   </p>
                 </div>
@@ -1716,7 +1739,9 @@ function FunctionalNoteModal({
                   <h4 className="mt-3 text-sm font-extrabold text-[#17132d]">Transcript status: {lecture.status}</h4>
                   <p className="mt-1 text-xs text-[#827c8e]">
                     {lecture.status === "processing"
-                      ? "Audio is currently being transcribed with Whisper AI. Please check back shortly."
+                      ? (lecture.processingError && !String(lecture.processingError).toLowerCase().includes("fail")
+                          ? String(lecture.processingError)
+                          : "Long lectures are transcribed in parts with Whisper AI. This can take several minutes — progress updates automatically.")
                       : "No transcript generated yet for this recording. You can retry it from Lecture Studio."}
                   </p>
                 </div>

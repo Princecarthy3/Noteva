@@ -287,7 +287,7 @@ async function splitLongMedia(bytes: Buffer, mimeType: string): Promise<Array<{ 
     return [{ bytes, mimeType: mime }];
   }
   throw new Error(
-    "This lecture is too long for a single transcription pass. Compress it under ~25 MB per part, or ensure ffmpeg is available on the server for automatic splitting.",
+    "This lecture is too long for a single transcription pass and automatic splitting is unavailable. Convert the file to WAV (or split it into parts under ~25 MB each) and upload again. WAV files can be split automatically without extra server tools.",
   );
 }
 
