@@ -2,8 +2,6 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
 
 /** Target length per transcription chunk (seconds). */
 export const CHUNK_SECONDS = 10 * 60;
@@ -32,14 +30,10 @@ function cleanMime(mimeType: string) {
 }
 
 function resolveFfmpegPath(): string | null {
-  try {
-    const req = createRequire(fileURLToPath(import.meta.url));
-    const ffmpegStatic = req("ffmpeg-static") as string | null;
-    if (typeof ffmpegStatic === "string" && ffmpegStatic.length > 0) return ffmpegStatic;
-  } catch {
-    // optional dependency at runtime
-  }
-  return process.env.FFMPEG_PATH?.trim() || null;
+  const fromEnv = process.env.FFMPEG_PATH?.trim();
+  if (fromEnv) return fromEnv;
+  // On many server images ffmpeg is on PATH.
+  return "ffmpeg";
 }
 
 function runCommand(bin: string, args: string[], timeoutMs: number) {
@@ -81,17 +75,12 @@ export async function splitMediaForTranscription(input: {
     return [{ bytes: input.bytes, mimeType: mime, index: 0, total: 1 }];
   }
 
-  const ffmpegPath = resolveFfmpegPath();
-  if (!ffmpegPath) {
-    // Last-resort: hard-split WAV by bytes on approximate frame boundaries.
-    if (mime === "audio/wav" || mime === "audio/x-wav") {
-      return splitWavBySize(input.bytes, mime);
-    }
-    throw new Error(
-      "This lecture is too long for a single transcription pass, and audio segmentation is unavailable. Install ffmpeg-static or set FFMPEG_PATH, then retry.",
-    );
+  // WAV can be split without ffmpeg.
+  if (mime === "audio/wav" || mime === "audio/x-wav") {
+    return splitWavBySize(input.bytes, mime);
   }
 
+  const ffmpegPath = resolveFfmpegPath();
   const ext = extensionByMime[mime] || "webm";
   const dir = await mkdtemp(path.join(tmpdir(), "studystation-chunks-"));
   const inputPath = path.join(dir, `source.${ext}`);
@@ -100,7 +89,6 @@ export async function splitMediaForTranscription(input: {
   try {
     await writeFile(inputPath, input.bytes);
 
-    // Re-encode to 16kHz mono WAV segments (~10 minutes). Whisper-friendly and size-bounded.
     await runCommand(
       ffmpegPath,
       [
@@ -133,7 +121,7 @@ export async function splitMediaForTranscription(input: {
       throw new Error("Audio segmentation produced no chunks.");
     }
 
-    const chunks = [];
+    const chunks: Array<{ bytes: Buffer; mimeType: string; index: number; total: number }> = [];
     for (let i = 0; i < files.length; i += 1) {
       const bytes = await readFile(path.join(dir, files[i]));
       if (bytes.length < 1000) continue;
@@ -150,6 +138,16 @@ export async function splitMediaForTranscription(input: {
     }
 
     return chunks.map((chunk) => ({ ...chunk, total: chunks.length }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // If ffmpeg is unavailable, fall back to a single-pass attempt when still under a hard ceiling.
+    if (input.bytes.length <= 25 * 1024 * 1024) {
+      console.warn("ffmpeg segmentation unavailable, using single-pass transcription:", message);
+      return [{ bytes: input.bytes, mimeType: mime, index: 0, total: 1 }];
+    }
+    throw new Error(
+      "This long lecture needs audio segmentation (ffmpeg) before transcription. Compress the file under 25 MB per part, or ensure ffmpeg is available on the server, then retry.",
+    );
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -169,7 +167,6 @@ function splitWavBySize(bytes: Buffer, mimeType: string) {
     const body = data.subarray(offset, offset + piece);
     const out = Buffer.alloc(44 + body.length);
     header.copy(out, 0, 0, 44);
-    // patch chunk sizes
     out.writeUInt32LE(36 + body.length, 4);
     out.writeUInt32LE(body.length, 40);
     body.copy(out, 44);
