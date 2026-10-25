@@ -329,10 +329,9 @@ export async function transcribeLectureMedia(input: {
     throw new Error("No speech could be detected across the lecture chunks.");
   }
 
+  const merged = parts.join("\n\n").trim();
   return {
-    text: parts.join("
-
-").trim(),
+    text: merged,
     segments: null,
     language: null,
   };
