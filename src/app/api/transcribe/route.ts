@@ -151,14 +151,6 @@ export async function POST(request: Request) {
       sourceType: lecture.source_type,
       title: lecture.title,
       courseTitle,
-      onProgress: async (message) => {
-        await admin
-          .from("lectures")
-          .update({ processing_error: message, updated_at: new Date().toISOString() })
-          .eq("id", lecture.id)
-          .eq("user_id", user.id)
-          .eq("status", "processing");
-      },
     });
     const cleanTranscript = result.text;
     if (!cleanTranscript) throw new Error("No speech was detected in the uploaded media.");

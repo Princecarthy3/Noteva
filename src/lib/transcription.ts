@@ -73,7 +73,7 @@ async function transcribeWithGroq(input: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: formData,
-    signal: AbortSignal.timeout(240_000),
+    signal: AbortSignal.timeout(180_000),
   });
 
   const data = (await response.json()) as { text?: string; error?: { message?: string } };
@@ -126,7 +126,7 @@ async function transcribeWithGemini(input: {
         responseMimeType: "application/json",
       },
     }),
-    signal: AbortSignal.timeout(240_000),
+    signal: AbortSignal.timeout(180_000),
   });
 
   const data = (await response.json()) as {
@@ -205,55 +205,83 @@ export async function transcribeLectureMedia(input: {
   sourceType: LectureMediaType;
   title: string;
   courseTitle: string;
-  onProgress?: (message: string) => void | Promise<void>;
 }): Promise<NormalizedTranscript> {
-  const { splitMediaForTranscription } = await import("@/lib/audio-chunker");
-  const chunks = await splitMediaForTranscription({ bytes: input.bytes, mimeType: input.mimeType });
+  const cleanMime = input.mimeType.toLowerCase().split(";")[0].trim();
+  let text = "";
+  const errors: string[] = [];
 
-  async function runOne(bytes: Buffer, mime: string, title: string): Promise<string> {
-    const cleanMime = mime.toLowerCase().split(";")[0].trim();
-    let text = "";
-    const errors: string[] = [];
-    if (process.env.GROQ_API_KEY?.trim()) {
-      try { text = await transcribeWithGroq({ bytes, cleanMime }); }
-      catch (e) { errors.push(`Groq: ${e instanceof Error ? e.message : String(e)}`); }
+  // 1. Try Groq Cloud Whisper first if GROQ_API_KEY is configured (Fastest, 100% free)
+  if (process.env.GROQ_API_KEY?.trim()) {
+    try {
+      text = await transcribeWithGroq({
+        bytes: input.bytes,
+        cleanMime,
+      });
+    } catch (groqError) {
+      const msg = groqError instanceof Error ? groqError.message : String(groqError);
+      console.warn("Groq transcription failed, trying next provider:", msg);
+      errors.push(`Groq: ${msg}`);
     }
-    if (!text && process.env.GEMINI_API_KEY?.trim()) {
+  }
+
+  // 2. Try Google Gemini API if GEMINI_API_KEY is configured (Free, multimodal)
+  if (!text && process.env.GEMINI_API_KEY?.trim()) {
+    try {
+      text = await transcribeWithGemini({
+        bytes: input.bytes,
+        cleanMime,
+        title: input.title,
+        courseTitle: input.courseTitle,
+      });
+    } catch (geminiError) {
+      const msg = geminiError instanceof Error ? geminiError.message : String(geminiError);
+      console.warn("Gemini transcription failed, trying next provider:", msg);
+      errors.push(`Gemini: ${msg}`);
+    }
+  }
+
+  // 3. Fallback to OpenRouter if configured and has credits
+  if (!text && hasOpenRouterKey()) {
+    const whisperModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
+    const audioFormat = audioFormats[cleanMime];
+
+    if (whisperModel && audioFormat && input.sourceType !== "video") {
       try {
-        text = await transcribeWithGemini({ bytes, cleanMime, title, courseTitle: input.courseTitle });
-      } catch (e) { errors.push(`Gemini: ${e instanceof Error ? e.message : String(e)}`); }
-    }
-    if (!text && hasOpenRouterKey()) {
-      const whisperModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
-      const audioFormat = audioFormats[cleanMime];
-      if (whisperModel && audioFormat && input.sourceType !== "video") {
-        try {
-          const result = await openRouterTranscribe(bytes.toString("base64"), audioFormat);
-          if (result.text?.trim()) text = result.text.trim();
-        } catch (e) { errors.push(`OpenRouter Whisper: ${e instanceof Error ? e.message : String(e)}`); }
-      }
-      if (!text) {
-        try {
-          text = await transcribeWithMultimodalAI({ bytes, cleanMime, title, courseTitle: input.courseTitle });
-        } catch (e) { errors.push(`OpenRouter Multimodal: ${e instanceof Error ? e.message : String(e)}`); }
+        const result = await openRouterTranscribe(input.bytes.toString("base64"), audioFormat);
+        if (result.text && result.text.trim()) {
+          text = result.text.trim();
+        }
+      } catch (whisperError) {
+        const msg = whisperError instanceof Error ? whisperError.message : String(whisperError);
+        console.warn("OpenRouter Whisper transcription failed:", msg);
+        errors.push(`OpenRouter Whisper: ${msg}`);
       }
     }
-    if (!text?.trim()) {
-      throw new Error(errors[0] ? `Transcription failed: ${errors[0]}` : "No speech could be detected in this recording.");
+
+    if (!text) {
+      try {
+        text = await transcribeWithMultimodalAI({
+          bytes: input.bytes,
+          cleanMime,
+          title: input.title,
+          courseTitle: input.courseTitle,
+        });
+      } catch (multimodalError) {
+        const msg = multimodalError instanceof Error ? multimodalError.message : String(multimodalError);
+        console.warn("OpenRouter multimodal transcription failed:", msg);
+        errors.push(`OpenRouter Multimodal: ${msg}`);
+      }
     }
-    return text.trim();
   }
 
-  if (chunks.length === 1) {
-    await input.onProgress?.("Transcribing lecture…");
-    const text = await runOne(chunks[0].bytes, chunks[0].mimeType, input.title);
-    return { text, segments: null, language: null };
+  if (!text || !text.trim()) {
+    if (errors.length > 0) {
+      // Pick the most relevant error to show the user
+      const primaryError = errors[0];
+      throw new Error(`Transcription failed: ${primaryError}`);
+    }
+    throw new Error("No speech could be detected in this recording, or transcription is not configured. Add a free GROQ_API_KEY in .env.local.");
   }
 
-  const parts: string[] = [];
-  for (const chunk of chunks) {
-    await input.onProgress?.(`Transcribing part ${chunk.index + 1} of ${chunk.total}…`);
-    parts.push(await runOne(chunk.bytes, chunk.mimeType, `${input.title} (part ${chunk.index + 1}/${chunk.total})`));
-  }
-  return { text: parts.join("\n\n").trim(), segments: null, language: null };
+  return { text: text.trim(), segments: null, language: null };
 }
