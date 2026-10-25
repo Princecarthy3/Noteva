@@ -222,7 +222,8 @@ export function AppShell({
   const [activeLectureNote, setActiveLectureNote] = useState<Stage6Lecture | null>(null);
 
   // Assistant Chat State
-  const firstName = profile.fullName.trim().split(/\s+/)[0] || "Student";
+  const rawFirstName = profile.fullName.trim().split(/\s+/).filter(Boolean)[0] || "";
+  const firstName = !rawFirstName || /^studystation$/i.test(rawFirstName) ? "Student" : rawFirstName;
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [selectedChatLectureId, setSelectedChatLectureId] = useState<string>("all");

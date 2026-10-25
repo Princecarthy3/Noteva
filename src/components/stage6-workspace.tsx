@@ -198,7 +198,8 @@ export function Stage6Dashboard({
   const [taskDialog, setTaskDialog] = useState(false);
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
-  const firstName = fullName.trim().split(/\s+/)[0] || "Student";
+  const rawFirst = fullName.trim().split(/\s+/).filter(Boolean)[0] || "";
+  const firstName = !rawFirst || /^studystation$/i.test(rawFirst) ? "Student" : rawFirst;
   const activeCourses = useMemo(() => data.courses.filter((course) =>
     !course.archived && (!data.currentSemester || !course.term || course.term === data.currentSemester)), [data.courses, data.currentSemester]);
   const courseNames = useMemo(() => new Map(data.courses.map((course) => [course.id, `${course.code} · ${course.title}`])), [data.courses]);
