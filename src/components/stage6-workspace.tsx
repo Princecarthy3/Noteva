@@ -920,7 +920,7 @@ export function LectureStudio({
                       void openLecture(lecture.id);
                     }
                   }}
-                  className={`flex cursor-pointer items-center gap-2 rounded-2xl border p-3 transition ${isActive ? "border-[#c8bcf2] bg-[#f8f6ff] shadow-sm" : "border-[#f0edf4] hover:border-[#d9d0f5] hover:bg-[#fbfaff]"}`}
+                  className={`flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-2xl border p-3 transition ${isActive ? "border-[#c8bcf2] bg-[#f8f6ff] shadow-sm" : "border-[#f0edf4] hover:border-[#d9d0f5] hover:bg-[#fbfaff]"}`}
                 >
                   <div className="min-w-0 flex-1 text-left">
                     <span className="block truncate text-sm font-extrabold">{lecture.title}</span>

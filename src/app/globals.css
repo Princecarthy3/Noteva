@@ -830,7 +830,8 @@ html.motion-ready [data-card-reveal]:nth-child(6) { transition-delay: 400ms; }
   min-width: 0;
 }
 
-/* Long unbroken strings (course codes, URLs, filenames) wrap instead of stretching */
+/* Long unbroken strings wrap instead of stretching the layout.
+   Respect Tailwind truncate (white-space: nowrap + overflow hidden). */
 .workspace-shell p,
 .workspace-shell h1,
 .workspace-shell h2,
@@ -847,8 +848,17 @@ html.motion-ready [data-card-reveal]:nth-child(6) { transition-delay: 400ms; }
 .public-surface h2,
 .public-surface h3,
 .public-surface span {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.workspace-shell .truncate,
+.public-surface .truncate {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
 }
 
 /* Flex/grid children must be allowed to shrink below content size */
