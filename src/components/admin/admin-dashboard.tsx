@@ -30,6 +30,11 @@ import {
   FileCode,
   Globe,
   Filter,
+  ShieldAlert,
+  MessageSquare,
+  CornerDownRight,
+  Mail,
+  Check,
 } from "lucide-react";
 
 type OverviewData = {
@@ -131,6 +136,24 @@ type Review = {
   rating: number;
   review: string;
   created_at: string;
+  admin_reply?: string | null;
+  admin_reply_at?: string | null;
+  admin_reply_by?: string | null;
+};
+
+type ModerationReport = {
+  id: string;
+  reporterId: string;
+  reporterName: string;
+  reporterEmail: string;
+  groupId: string;
+  groupName: string;
+  messageId: string | null;
+  details: string;
+  status: "pending" | "resolved" | "dismissed";
+  createdAt: string;
+  resolvedAt: string | null;
+  adminNotes: string | null;
 };
 
 type SystemDiagnostics = {
@@ -170,7 +193,7 @@ type LectureDetail = {
 export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
-    "overview" | "students" | "lectures" | "ai" | "reviews" | "broadcast" | "system"
+    "overview" | "students" | "lectures" | "ai" | "reviews" | "reports" | "broadcast" | "system"
   >("overview");
 
   // Loading states
@@ -184,7 +207,15 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
   const [lectures, setLectures] = useState<LectureItem[]>([]);
   const [aiRuns, setAiRuns] = useState<AiRun[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [reports, setReports] = useState<ModerationReport[]>([]);
+  const [reportFilter, setReportFilter] = useState<"all" | "pending" | "resolved" | "dismissed">("all");
+  const [updatingReportId, setUpdatingReportId] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
+
+  // Review reply state & modal
+  const [replyModalReview, setReplyModalReview] = useState<Review | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [savingReply, setSavingReply] = useState(false);
 
   // Search & Filter states
   const [studentSearch, setStudentSearch] = useState("");
@@ -284,6 +315,17 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
     }
   }, []);
 
+  // Fetch moderation reports
+  const fetchReports = useCallback(async () => {
+    try {
+      const res = await fetch("/api/reports");
+      const data = await res.json();
+      if (data.reports) setReports(data.reports);
+    } catch (err) {
+      console.error("Reports error", err);
+    }
+  }, []);
+
   // Fetch system diagnostics
   const fetchDiagnostics = useCallback(async () => {
     try {
@@ -305,12 +347,13 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
         fetchLectures(),
         fetchAiRuns(),
         fetchReviews(),
+        fetchReports(),
         fetchDiagnostics(),
       ]);
       setLoading(false);
     };
     loadAll();
-  }, [fetchOverview, fetchStudents, fetchLectures, fetchAiRuns, fetchReviews, fetchDiagnostics]);
+  }, [fetchOverview, fetchStudents, fetchLectures, fetchAiRuns, fetchReviews, fetchReports, fetchDiagnostics]);
 
   // Refresh active tab
   const handleRefresh = async () => {
@@ -320,6 +363,7 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
     else if (activeTab === "lectures") await fetchLectures();
     else if (activeTab === "ai") await fetchAiRuns();
     else if (activeTab === "reviews") await fetchReviews();
+    else if (activeTab === "reports") await fetchReports();
     else if (activeTab === "system") await fetchDiagnostics();
     setRefreshing(false);
     showToast("Data refreshed.");
@@ -392,6 +436,107 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
       }
     } catch {
       showToast("Failed to delete review.", "error");
+    }
+  };
+
+  // Review reply handlers
+  const openReplyModal = (r: Review) => {
+    setReplyModalReview(r);
+    setReplyText(r.admin_reply || "");
+  };
+
+  const handleSaveReviewReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!replyModalReview || !replyText.trim()) return;
+    setSavingReply(true);
+    try {
+      const res = await fetch("/api/admin/reviews/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reviewId: replyModalReview.id,
+          replyText: replyText.trim(),
+          adminEmail,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        showToast("Official reply published and now live on the landing page!");
+        setReplyModalReview(null);
+        setReplyText("");
+        await fetchReviews();
+      } else {
+        showToast(data.error || "Failed to save reply.", "error");
+      }
+    } catch {
+      showToast("Failed to save reply.", "error");
+    } finally {
+      setSavingReply(false);
+    }
+  };
+
+  const handleDeleteReviewReply = async (reviewId: string) => {
+    if (!confirm("Remove the official admin reply to this review?")) return;
+    setSavingReply(true);
+    try {
+      const res = await fetch("/api/admin/reviews/reply", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        showToast("Official reply removed.");
+        await fetchReviews();
+      } else {
+        showToast(data.error || "Failed to remove reply.", "error");
+      }
+    } catch {
+      showToast("Failed to remove reply.", "error");
+    } finally {
+      setSavingReply(false);
+    }
+  };
+
+  // Moderation Report actions
+  const handleUpdateReportStatus = async (reportId: string, status: "pending" | "resolved" | "dismissed") => {
+    setUpdatingReportId(reportId);
+    try {
+      const res = await fetch("/api/reports", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: reportId, status }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        showToast(`Report marked as ${status}.`);
+        await fetchReports();
+      } else {
+        showToast(data.error || "Failed to update report.", "error");
+      }
+    } catch {
+      showToast("Error updating report.", "error");
+    } finally {
+      setUpdatingReportId(null);
+    }
+  };
+
+  const handleDeleteReport = async (reportId: string) => {
+    if (!confirm("Are you sure you want to delete this concern report?")) return;
+    setUpdatingReportId(reportId);
+    try {
+      const res = await fetch(`/api/reports?id=${reportId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        showToast("Report deleted.");
+        await fetchReports();
+      } else {
+        showToast(data.error || "Failed to delete report.", "error");
+      }
+    } catch {
+      showToast("Error deleting report.", "error");
+    } finally {
+      setUpdatingReportId(null);
     }
   };
 
@@ -567,6 +712,13 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
             { id: "lectures", label: "Lectures & Audio", icon: FileText, count: overview?.metrics?.totalLectures ?? (lectures.length > 0 ? lectures.length : null) },
             { id: "ai", label: "AI Engine", icon: Sparkles, count: overview?.metrics?.totalAiGenerations ?? (aiRuns.length > 0 ? aiRuns.length : null) },
             { id: "reviews", label: "Reviews", icon: Star, count: overview?.metrics?.totalReviews ?? (reviews.length > 0 ? reviews.length : null) },
+            {
+              id: "reports",
+              label: "Concern Reports",
+              icon: ShieldAlert,
+              count: reports.filter((r) => r.status === "pending").length > 0 ? reports.filter((r) => r.status === "pending").length : null,
+              alert: reports.some((r) => r.status === "pending"),
+            },
             { id: "broadcast", label: "Announcements", icon: Radio, count: null },
             { id: "system", label: "System Health", icon: Server, count: null },
           ].map((tab) => {
@@ -583,13 +735,17 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
                 }`}
               >
                 <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 ${isActive ? "text-indigo-400" : "text-slate-400"}`} />
+                  <Icon className={`w-4 h-4 ${tab.alert && !isActive ? "text-amber-400" : isActive ? "text-indigo-400" : "text-slate-400"}`} />
                   <span>{tab.label}</span>
                 </div>
                 {tab.count !== null && tab.count !== undefined && (
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      isActive ? "bg-indigo-500/30 text-indigo-200" : "bg-white/[0.05] text-slate-400"
+                      tab.alert
+                        ? "bg-amber-500/30 text-amber-300 border border-amber-500/40"
+                        : isActive
+                        ? "bg-indigo-500/30 text-indigo-200"
+                        : "bg-white/[0.05] text-slate-400"
                     }`}
                   >
                     {tab.count}
@@ -1238,15 +1394,257 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
                       <p className="text-xs text-slate-200 leading-relaxed italic mb-4">
                         &ldquo;{r.review}&rdquo;
                       </p>
+
+                      {/* Official Admin Reply display */}
+                      {r.admin_reply && (
+                        <div className="mb-4 p-3 rounded-xl bg-indigo-500/[0.07] border border-indigo-500/20 text-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold text-indigo-300 flex items-center gap-1 text-[11px]">
+                              <CornerDownRight className="w-3 h-3 text-indigo-400" />
+                              Official Admin Response:
+                            </span>
+                            <button
+                              onClick={() => handleDeleteReviewReply(r.id)}
+                              className="text-[10px] text-slate-400 hover:text-red-400 underline cursor-pointer"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <p className="text-slate-200 text-xs leading-relaxed">{r.admin_reply}</p>
+                          {r.admin_reply_at && (
+                            <p className="text-[10px] text-indigo-300/60 mt-1">
+                              Replied on {new Date(r.admin_reply_at).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="pt-3 border-t border-white/[0.05]">
-                      <p className="text-xs font-semibold text-white">{r.display_name}</p>
-                      <p className="text-[11px] text-slate-400 truncate">{r.university || "University Student"}</p>
-                      <p className="text-[10px] text-slate-500 mt-1">{new Date(r.created_at).toLocaleDateString()}</p>
+
+                    <div className="pt-3 border-t border-white/[0.05] flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-white">{r.display_name}</p>
+                        <p className="text-[11px] text-slate-400 truncate">{r.university || "University Student"}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{new Date(r.created_at).toLocaleDateString()}</p>
+                      </div>
+
+                      <button
+                        onClick={() => openReplyModal(r)}
+                        className="px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-[11px] font-medium text-indigo-300 hover:text-indigo-200 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        {r.admin_reply ? "Edit Reply" : "Reply"}
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* TAB: CONCERN & MODERATION REPORTS */}
+          {activeTab === "reports" && (
+            <div className="space-y-6 max-w-7xl mx-auto">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-white tracking-tight">Campus Safety & Concern Reports</h1>
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      Moderation
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Student reports submitted from Study Groups. Primary support inbox:{" "}
+                    <span className="text-indigo-400 font-mono font-semibold">studystation.support@gmail.com</span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={fetchReports}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs text-slate-300 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Refresh Reports
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="p-4 rounded-xl bg-[#0f1320] border border-white/[0.08]">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Reports</p>
+                  <p className="text-2xl font-extrabold text-white mt-1">{reports.length}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-[#0f1320] border border-amber-500/20 bg-amber-500/[0.03]">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Pending Action</p>
+                  <p className="text-2xl font-extrabold text-amber-300 mt-1">
+                    {reports.filter((r) => r.status === "pending").length}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl bg-[#0f1320] border border-emerald-500/20 bg-emerald-500/[0.03]">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Resolved</p>
+                  <p className="text-2xl font-extrabold text-emerald-300 mt-1">
+                    {reports.filter((r) => r.status === "resolved").length}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl bg-[#0f1320] border border-slate-500/20 bg-slate-500/[0.03]">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Dismissed</p>
+                  <p className="text-2xl font-extrabold text-slate-300 mt-1">
+                    {reports.filter((r) => r.status === "dismissed").length}
+                  </p>
+                </div>
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-2 border-b border-white/[0.08] pb-3">
+                {(["all", "pending", "resolved", "dismissed"] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setReportFilter(filter)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                      reportFilter === filter
+                        ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                        : "text-slate-400 hover:text-white bg-white/[0.02] border border-transparent"
+                    }`}
+                  >
+                    {filter === "all" ? `All (${reports.length})` : `${filter} (${reports.filter((r) => r.status === filter).length})`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Reports List */}
+              {reports.filter((r) => reportFilter === "all" || r.status === reportFilter).length === 0 ? (
+                <div className="text-center py-16 rounded-2xl bg-[#0f1320] border border-white/[0.08] text-slate-400">
+                  <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-slate-500 opacity-60" />
+                  <p className="text-sm font-semibold text-slate-300">No reports found</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {reportFilter === "all"
+                      ? "Great news! No student reports have been logged yet."
+                      : `No reports currently matching status '${reportFilter}'.`}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {reports
+                    .filter((r) => reportFilter === "all" || r.status === reportFilter)
+                    .map((report) => (
+                      <div
+                        key={report.id}
+                        className={`p-5 rounded-2xl bg-[#0f1320] border transition-all ${
+                          report.status === "pending"
+                            ? "border-amber-500/30 shadow-lg shadow-amber-500/5"
+                            : report.status === "resolved"
+                            ? "border-emerald-500/20"
+                            : "border-white/[0.06] opacity-80"
+                        }`}
+                      >
+                        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                          <div className="space-y-2 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Status Badge */}
+                              <span
+                                className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                                  report.status === "pending"
+                                    ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                    : report.status === "resolved"
+                                    ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                                    : "bg-slate-500/10 text-slate-400 border-slate-500/30"
+                                }`}
+                              >
+                                {report.status}
+                              </span>
+
+                              <span className="text-xs font-bold text-white">{report.groupName}</span>
+                              <span className="text-[11px] text-slate-500">•</span>
+                              <span className="text-[11px] text-slate-400">
+                                {new Date(report.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+
+                            {/* Details block */}
+                            <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">
+                              {report.details}
+                            </div>
+
+                            {/* Reporter metadata */}
+                            <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-400 pt-1">
+                              <div>
+                                Reporter: <strong className="text-slate-200">{report.reporterName}</strong>
+                              </div>
+                              <div>
+                                Email: <span className="text-indigo-300 font-mono">{report.reporterEmail}</span>
+                              </div>
+                              {report.messageId && (
+                                <div>
+                                  Target Message ID: <span className="font-mono text-slate-400">{report.messageId}</span>
+                                </div>
+                              )}
+                              {report.resolvedAt && (
+                                <div className="text-emerald-400/80">
+                                  Resolved on {new Date(report.resolvedAt).toLocaleDateString()}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex flex-row md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0">
+                            {/* Email reporter */}
+                            <a
+                              href={`mailto:${report.reporterEmail}?subject=${encodeURIComponent(
+                                `StudyStation Admin Support: Regarding your report on ${report.groupName}`
+                              )}`}
+                              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
+                            >
+                              <Mail className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Email Student</span>
+                            </a>
+
+                            {report.status !== "resolved" && (
+                              <button
+                                onClick={() => handleUpdateReportStatus(report.id, "resolved")}
+                                disabled={updatingReportId === report.id}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-xs font-semibold text-emerald-300 hover:text-emerald-200 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Mark Resolved</span>
+                              </button>
+                            )}
+
+                            {report.status !== "dismissed" && (
+                              <button
+                                onClick={() => handleUpdateReportStatus(report.id, "dismissed")}
+                                disabled={updatingReportId === report.id}
+                                className="px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-xs font-medium text-slate-400 hover:text-slate-200 cursor-pointer disabled:opacity-50"
+                              >
+                                Dismiss
+                              </button>
+                            )}
+
+                            {report.status !== "pending" && (
+                              <button
+                                onClick={() => handleUpdateReportStatus(report.id, "pending")}
+                                disabled={updatingReportId === report.id}
+                                className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-xs font-semibold text-amber-300 cursor-pointer disabled:opacity-50"
+                              >
+                                Reopen
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleDeleteReport(report.id)}
+                              disabled={updatingReportId === report.id}
+                              className="p-1.5 text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
+                              title="Delete Report"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1545,6 +1943,78 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
                 {deletingLecture ? "Deleting..." : "Permanently Delete"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL: Review Reply */}
+      {replyModalReview && (
+        <div className="fixed inset-0 z-[130] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-[#0c101a] border border-indigo-500/30 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Reply to Student Review</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Public official response by <strong className="text-indigo-300">{adminEmail}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setReplyModalReview(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Original Review snippet */}
+            <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-white">{replyModalReview.display_name}</span>
+                <span className="text-[10px] text-amber-400 font-bold">{replyModalReview.rating} ★</span>
+              </div>
+              <p className="text-slate-300 italic text-[11px] leading-relaxed">&ldquo;{replyModalReview.review}&rdquo;</p>
+            </div>
+
+            <form onSubmit={handleSaveReviewReply} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Official Team Response
+                </label>
+                <textarea
+                  required
+                  rows={4}
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Thank you for sharing your feedback! We're glad StudyStation helps you ace your courses..."
+                  className="w-full bg-[#151a2b] border border-white/10 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  💡 This response will be displayed publicly directly underneath the student review on the landing page and reviews showcase.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReplyModalReview(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingReply}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-indigo-500/20"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {savingReply ? "Publishing..." : "Publish Public Reply"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

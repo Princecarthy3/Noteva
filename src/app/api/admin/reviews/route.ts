@@ -5,6 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+import { getAdminReviewReplies } from "@/lib/review-replies";
+
 export async function GET() {
   const session = await getAdminSession();
   if (!session) {
@@ -13,18 +15,31 @@ export async function GET() {
 
   try {
     const adminClient = createAdminClient();
-    const { data: reviews, error } = await adminClient
-      .from("student_reviews")
-      .select("id, user_id, display_name, university, rating, review, created_at, updated_at")
-      .order("created_at", { ascending: false });
+    const [reviewsRes, repliesMap] = await Promise.all([
+      adminClient
+        .from("student_reviews")
+        .select("id, user_id, display_name, university, rating, review, created_at, updated_at")
+        .order("created_at", { ascending: false }),
+      getAdminReviewReplies(),
+    ]);
 
-    if (error) {
-      throw error;
+    if (reviewsRes.error) {
+      throw reviewsRes.error;
     }
 
+    const reviews = (reviewsRes.data ?? []).map((r) => {
+      const reply = repliesMap.get(r.id);
+      return {
+        ...r,
+        admin_reply: reply?.replyText || null,
+        admin_reply_at: reply?.repliedAt || null,
+        admin_reply_by: reply?.adminEmail || null,
+      };
+    });
+
     return NextResponse.json({
-      total: reviews?.length ?? 0,
-      reviews: reviews ?? [],
+      total: reviews.length,
+      reviews,
     });
   } catch (err) {
     console.error("Admin fetch reviews error:", err);

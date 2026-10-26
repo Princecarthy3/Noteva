@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
-import { MessageSquareQuote, Send, Star, X } from "lucide-react";
+import { MessageSquareQuote, Send, ShieldCheck, Star, X } from "lucide-react";
 
 type StudentReview = {
   id: string;
@@ -11,6 +11,8 @@ type StudentReview = {
   rating: number;
   review: string;
   created_at: string;
+  admin_reply?: string | null;
+  admin_reply_at?: string | null;
 };
 
 function Stars({ rating, size = "size-4" }: { rating: number; size?: string }) {
@@ -27,12 +29,22 @@ function ReviewCard({ item }: { item: StudentReview }) {
   return (
     <article
       data-review-card
-      className="glass-panel flex min-h-[205px] flex-col justify-between rounded-[24px] p-6 shadow-sm opacity-100"
+      className="glass-panel flex min-h-[220px] flex-col justify-between rounded-[24px] p-6 shadow-sm opacity-100"
     >
       <div>
         <Stars rating={item.rating} />
         <MessageSquareQuote className="mt-4 size-5 text-[#7259e8]" />
         <p className="mt-3 text-sm font-semibold leading-6 text-[#3d374a]">&ldquo;{item.review}&rdquo;</p>
+
+        {item.admin_reply && (
+          <div className="mt-4 rounded-2xl bg-[#7259e8]/[0.08] border border-[#7259e8]/20 p-3.5 text-xs text-left">
+            <div className="flex items-center gap-1.5 font-bold text-[#5d47bd] mb-1">
+              <ShieldCheck className="size-3.5 text-[#7259e8]" />
+              <span>StudyStation Response</span>
+            </div>
+            <p className="text-[#4e4859] leading-relaxed italic text-[11px]">&ldquo;{item.admin_reply}&rdquo;</p>
+          </div>
+        )}
       </div>
       <div className="mt-6 border-t border-[#f0edf5] pt-4">
         <p className="text-xs font-black text-[#17132d]">{item.display_name}</p>

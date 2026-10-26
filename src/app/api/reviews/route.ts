@@ -16,6 +16,8 @@ function normalizeUniversity(value: unknown): string | null {
   return trimmed;
 }
 
+import { getAdminReviewReplies } from "@/lib/review-replies";
+
 export async function GET(request: Request) {
   let supabase;
   try {
@@ -29,13 +31,18 @@ export async function GET(request: Request) {
     ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 50)
     : 12;
 
-  const { data, error } = await supabase
-    .from("student_reviews")
-    .select(reviewSelect)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  const [reviewsQuery, repliesMap] = await Promise.all([
+    supabase
+      .from("student_reviews")
+      .select(reviewSelect)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+    getAdminReviewReplies(),
+  ]);
 
-  if (error) {
+  let reviewsList = reviewsQuery.data;
+
+  if (reviewsQuery.error) {
     // Fallback for databases that have not applied the university column yet.
     const fallback = await supabase
       .from("student_reviews")
@@ -44,25 +51,30 @@ export async function GET(request: Request) {
       .limit(limit);
 
     if (fallback.error) {
-      console.error("Student reviews could not be loaded", { code: error.code, fallback: fallback.error.code });
+      console.error("Student reviews could not be loaded", { code: reviewsQuery.error.code, fallback: fallback.error.code });
       return NextResponse.json(
         { error: "Reviews could not be loaded. Apply the student reviews migration and try again." },
         { status: 500, headers: noStoreHeaders },
       );
     }
 
-    return NextResponse.json(
-      {
-        reviews: (fallback.data ?? []).map((review) => ({
-          ...review,
-          university: null,
-        })),
-      },
-      { headers: noStoreHeaders },
-    );
+    reviewsList = (fallback.data ?? []).map((review) => ({
+      ...review,
+      university: null,
+    }));
   }
 
-  return NextResponse.json({ reviews: data ?? [] }, { headers: noStoreHeaders });
+  const enrichedReviews = (reviewsList ?? []).map((review) => {
+    const reply = repliesMap.get(review.id);
+    return {
+      ...review,
+      admin_reply: reply?.replyText || null,
+      admin_reply_at: reply?.repliedAt || null,
+      admin_reply_by: reply?.adminEmail || null,
+    };
+  });
+
+  return NextResponse.json({ reviews: enrichedReviews }, { headers: noStoreHeaders });
 }
 
 export async function POST(request: Request) {
