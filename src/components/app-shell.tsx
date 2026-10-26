@@ -847,11 +847,13 @@ export function AppShell({
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between px-2">
-          <Brand inverse />
+        <div className="flex items-center gap-2 px-1">
+          <div className="min-w-0 flex-1">
+            <Brand inverse />
+          </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="grid size-8 place-items-center rounded-lg bg-white/10 lg:hidden"
+            className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/10 lg:hidden"
             aria-label="Close menu"
           >
             <X className="size-4" />
