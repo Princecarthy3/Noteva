@@ -1507,8 +1507,8 @@ function FunctionalNotesView({
 
                 <div className="min-w-0 flex-1">
                   <h3
-                    className={`min-w-0 break-words text-[15px] font-extrabold text-[#17132d] group-hover:text-[#7259e8] ${
-                      layout === "grid" ? "mt-4" : "mt-2 sm:mt-0"
+                    className={`min-w-0 text-[15px] font-extrabold text-[#17132d] group-hover:text-[#7259e8] ${
+                      layout === "grid" ? "mt-4 line-clamp-2" : "mt-2 truncate sm:mt-0"
                     }`}
                   >
                     {lecture.title}
@@ -1677,7 +1677,7 @@ function FunctionalNoteModal({
               {course?.code || "NOTE"}
             </span>
             <div>
-              <h2 className="text-[16px] font-extrabold text-[#17132d]">{lecture.title}</h2>
+              <h2 className="max-w-[min(100%,22rem)] truncate text-[16px] font-extrabold text-[#17132d] sm:max-w-md">{lecture.title}</h2>
               <p className="mt-0.5 text-[10px] text-[#868093]">
                 {course ? course.title : "Unassigned course"} ·{" "}
                 {new Date(lecture.createdAt).toLocaleDateString("en-US", { timeZone: timezone || "UTC" })}
