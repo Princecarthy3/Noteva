@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleHelp, Layers3, LoaderCircle, RotateCcw, Sparkles } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleHelp, Layers3, LoaderCircle, Maximize2, RotateCcw, Sparkles, X } from "lucide-react";
 import type { FlashcardsOutput, QuizOutput } from "@/lib/study-lab-validation";
 
 type StudyMaterial = {
@@ -130,6 +130,17 @@ export function GeneratedQuizLibrary() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [requestError, setRequestError] = useState("");
+  const [quizFullscreen, setQuizFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!quizFullscreen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setQuizFullscreen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [quizFullscreen]);
+
   const selected = quizzes.find((quiz) => quiz.id === selectedId) ?? quizzes[0] ?? null;
 
   function selectQuiz(id: string) {
@@ -138,6 +149,7 @@ export function GeneratedQuizLibrary() {
     setChecked(false);
     setMessage("");
     setRequestError("");
+    setQuizFullscreen(false);
   }
 
   async function saveAttempt() {
@@ -184,7 +196,12 @@ export function GeneratedQuizLibrary() {
                 </select>
               </label>
               {selected && <div className="mt-4 space-y-3">
-                <p className="text-[10px] text-[#85808d]">From {selected.sourceTitle} · {selected.output.questions.length} questions</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[10px] text-[#85808d]">From {selected.sourceTitle} · {selected.output.questions.length} questions</p>
+                  <button type="button" onClick={() => setQuizFullscreen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] bg-white px-2.5 text-[10px] font-extrabold text-[#534e60] hover:bg-[#faf9fd]">
+                    <Maximize2 className="size-3.5" /> Full screen
+                  </button>
+                </div>
                 {selected.output.questions.map((question, index) => (
                   <fieldset key={`${selected.id}-${index}`} className="rounded-xl border border-[#ebe7f0] p-3">
                     <legend className="px-1 text-[10px] font-extrabold text-[#28233a]">Q{index + 1}. {question.question}</legend>
@@ -202,6 +219,47 @@ export function GeneratedQuizLibrary() {
                 <button type="button" disabled={saving} onClick={() => void saveAttempt()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#17132d] py-2.5 text-[10px] font-extrabold text-white disabled:opacity-60">{saving && <LoaderCircle className="size-3.5 animate-spin" />} {checked ? "Save another attempt" : "Check answers and save attempt"}</button>
               </div>}
             </>}
+      {quizFullscreen && selected && (
+        <div className="fixed inset-0 z-[110] flex flex-col bg-white">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#ece8f4] bg-[#faf9fc] px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">Practice quiz</p>
+              <h2 className="truncate text-sm font-black text-[#17132d] sm:text-base">{selected.title}</h2>
+              <p className="mt-0.5 truncate text-[10px] text-[#85808d]">From {selected.sourceTitle} · {selected.output.questions.length} questions</p>
+            </div>
+            <button type="button" onClick={() => setQuizFullscreen(false)} className="grid size-9 shrink-0 place-items-center rounded-xl border border-[#e6e2eb] bg-white text-[#5f586d] hover:bg-[#f4f1fb]" aria-label="Exit full screen quiz">
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
+            <div className="mx-auto max-w-2xl space-y-3">
+              {selected.output.questions.map((question, index) => (
+                <fieldset key={`fs-${selected.id}-${index}`} className="rounded-xl border border-[#ebe7f0] p-3 sm:p-4">
+                  <legend className="px-1 text-[11px] font-extrabold text-[#28233a]">Q{index + 1}. {question.question}</legend>
+                  <div className="mt-2 space-y-1.5">
+                    {question.choices.map((choice, choiceIndex) => (
+                      <label key={`fs-${choiceIndex}-${choice}`} className={`flex cursor-pointer items-start gap-2 rounded-lg p-2 text-[11px] leading-5 ${answers[index] === choiceIndex ? "bg-[#f3f0ff]" : "hover:bg-[#faf9fc]"}`}>
+                        <input type="radio" name={`fs-generated-quiz-${selected.id}-${index}`} checked={answers[index] === choiceIndex} onChange={() => { setAnswers((previous) => ({ ...previous, [index]: choiceIndex })); setChecked(false); setMessage(""); setRequestError(""); }} className="mt-0.5 accent-[#7259e8]" />
+                        <span>{choice}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {checked && (
+                    <p className={`mt-2 rounded-lg p-2 text-[11px] leading-5 ${answers[index] === question.correctIndex ? "bg-[#e9f7ef] text-[#287451]" : "bg-[#fff1ef] text-[#a44e48]"}`}>
+                      <b>{answers[index] === question.correctIndex ? "Right answer." : `Wrong answer. Correct answer: ${question.choices[question.correctIndex]}.`}</b> {question.explanation}
+                    </p>
+                  )}
+                </fieldset>
+              ))}
+              {requestError && <p role="alert" className="rounded-lg bg-[#fff1ef] p-2.5 text-[11px] font-semibold text-[#a44e48]">{requestError}</p>}
+              {message && <p role="status" className="rounded-lg bg-[#e9f7ef] p-2.5 text-[11px] font-semibold text-[#287451]">{message}</p>}
+              <button type="button" disabled={saving} onClick={() => void saveAttempt()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#17132d] py-3 text-[12px] font-extrabold text-white disabled:opacity-60">
+                {saving && <LoaderCircle className="size-3.5 animate-spin" />} {checked ? "Save another attempt" : "Check answers and save attempt"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

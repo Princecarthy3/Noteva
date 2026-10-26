@@ -6,11 +6,13 @@ import {
   Check,
   ChevronDown,
   LoaderCircle,
+  Maximize2,
   RotateCcw,
   Save,
   Sparkles,
   Trash2,
   WandSparkles,
+  X,
 } from "lucide-react";
 import type { StudyLabAction, StudyLabOutput } from "@/lib/study-lab-validation";
 
@@ -89,6 +91,16 @@ export function AiStudyLab() {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [showQuizResults, setShowQuizResults] = useState(false);
   const [revealedCards, setRevealedCards] = useState<Record<number, boolean>>({});
+  const [quizFullscreen, setQuizFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!quizFullscreen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setQuizFullscreen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [quizFullscreen]);
 
   const current = useMemo(() => generations.find((item) => item.id === selectedId) ?? null, [generations, selectedId]);
 
@@ -129,6 +141,7 @@ export function AiStudyLab() {
     setEditing(false);
     setAnswers({});
     setShowQuizResults(false);
+    setQuizFullscreen(false);
     setRevealedCards({});
     setEditedOutput(generation?.output ? JSON.stringify(generation.output, null, 2) : "");
   }
@@ -270,9 +283,67 @@ export function AiStudyLab() {
           <div className="flex items-start justify-between gap-3"><div><p className="text-[9px] font-black uppercase tracking-[.1em] text-[#8e8796]">{actionLabels[current.input_metadata?.action ?? "summary"]}</p><h3 className="mt-1 text-sm font-extrabold">{current.output && "title" in current.output ? current.output.title : current.input_metadata?.lectureTitle}</h3><p className="mt-1 text-[9px] text-[#9993a0]">Source: {current.input_metadata?.lectureTitle ?? "Lecture"}{current.input_metadata?.sourceTruncated ? " · source excerpt" : ""}</p></div><div className="flex shrink-0 gap-1"><button type="button" disabled={saving} onClick={() => {setEditedOutput(JSON.stringify(current.output, null, 2)); setEditing((value) => !value);}} className="rounded-lg border border-[#e9e5ef] px-2 py-1.5 text-[9px] font-extrabold text-[#5d5768] disabled:opacity-50">{editing ? "Cancel" : "Edit"}</button><button type="button" disabled={saving} onClick={() => void removeCurrent()} className="grid size-7 place-items-center rounded-lg text-[#aa625c] hover:bg-[#fff1ef] disabled:opacity-50" aria-label="Delete study material"><Trash2 className="size-3.5" /></button></div></div>
 
           {editing ? <div className="mt-3"><textarea value={editedOutput} onChange={(event) => setEditedOutput(event.target.value)} rows={14} aria-label="Edit generated study material JSON" className="w-full rounded-xl border border-[#e7e3ec] p-3 font-mono text-[10px] leading-4 outline-none focus:border-[#aa9af0]" /><button type="button" disabled={saving} onClick={() => void saveEdit()} className="mt-2 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#17132d] text-[10px] font-extrabold text-white disabled:opacity-60">{saving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} Save edits</button></div>
-            : <OutputView key={current.id} generation={current} answers={answers} setAnswers={setAnswers} showQuizResults={showQuizResults} setShowQuizResults={setShowQuizResults} revealedCards={revealedCards} setRevealedCards={setRevealedCards} quizScore={quizScore} />}
+            : (
+              <>
+                {current.output && "questions" in current.output && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setQuizFullscreen(true)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e6e2eb] bg-white px-2.5 text-[10px] font-extrabold text-[#534e60] hover:bg-[#faf9fd]"
+                    >
+                      <Maximize2 className="size-3.5" /> Full screen
+                    </button>
+                  </div>
+                )}
+                <OutputView key={current.id} generation={current} answers={answers} setAnswers={setAnswers} showQuizResults={showQuizResults} setShowQuizResults={setShowQuizResults} revealedCards={revealedCards} setRevealedCards={setRevealedCards} quizScore={quizScore} />
+              </>
+            )}
         </div>}
       </section>
+
+      {quizFullscreen && current?.output && "questions" in current.output && (
+        <div className="fixed inset-0 z-[110] flex flex-col bg-white">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#ece8f4] bg-[#faf9fc] px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">Practice quiz</p>
+              <h2 className="truncate text-sm font-black text-[#17132d] sm:text-base">
+                {current.input_metadata?.action === "quiz" ? "Quiz" : "Practice"} · {sources.find((s) => s.id === current.input_metadata?.lectureId)?.title ?? "Lecture"}
+              </h2>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {showQuizResults && (
+                <span className="rounded-full bg-[#f3f0ff] px-2.5 py-1 text-[10px] font-extrabold text-[#7259e8]">
+                  Score {quizScore}/{current.output.questions.length}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setQuizFullscreen(false)}
+                className="grid size-9 place-items-center rounded-xl border border-[#e6e2eb] bg-white text-[#5f586d] hover:bg-[#f4f1fb]"
+                aria-label="Exit full screen quiz"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
+            <div className="mx-auto max-w-2xl">
+              <OutputView
+                key={`fs-${current.id}`}
+                generation={current}
+                answers={answers}
+                setAnswers={setAnswers}
+                showQuizResults={showQuizResults}
+                setShowQuizResults={setShowQuizResults}
+                revealedCards={revealedCards}
+                setRevealedCards={setRevealedCards}
+                quizScore={quizScore}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   </div>;
 }
