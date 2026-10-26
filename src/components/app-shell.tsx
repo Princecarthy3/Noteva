@@ -41,7 +41,6 @@ import {
   LoaderCircle,
   Maximize2,
   MapPin,
-  Maximize2,
   Menu,
   MessageSquareText,
   Mic2,
@@ -1582,7 +1581,10 @@ function FunctionalNoteModal({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setFullScreenDoc(false);
+      if (event.key === "Escape") {
+        setFullScreenDoc(false);
+        setNotesFullscreen(false);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -1795,7 +1797,7 @@ function FunctionalNoteModal({
               </div>
             ) : (
               <AudioPlayer
-                src={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
+                src={`/api/lectures/${lecture.id}/media`}
                 fallbackSrc={`/api/lectures/${lecture.id}/media`}
                 title={lecture.title}
                 durationHintSeconds={lecture.durationSeconds ?? undefined}
@@ -1912,7 +1914,7 @@ function FunctionalNoteModal({
                       </a>
                     </div>
                   </div>
-                  <iframe title={`Original file: ${lecture.title}`} src={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`} className="h-[min(65vh,700px)] w-full bg-white" />
+                  <iframe title={`Original file: ${lecture.title}`} src={`/api/lectures/${lecture.id}/media`} className="h-[min(65vh,700px)] w-full bg-white" />
                 </div>
               ) : lecture.transcript ? (
                 <div className="rounded-2xl bg-[#f7f5ff] p-5 border border-[#e4ddfa]">
@@ -2093,7 +2095,7 @@ function FunctionalNoteModal({
           <div className="flex-1 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl">
             <iframe
               title={`Full screen: ${lecture.title}`}
-              src={lecture.mediaUrl || `/api/lectures/${lecture.id}/media`}
+              src={`/api/lectures/${lecture.id}/media`}
               className="h-full w-full border-0 bg-white"
             />
           </div>
