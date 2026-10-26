@@ -563,10 +563,10 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
         <aside className="w-full lg:w-64 bg-[#090C14] border-b lg:border-b-0 lg:border-r border-white/[0.06] p-3 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible shrink-0">
           {[
             { id: "overview", label: "Overview", icon: Activity, count: null },
-            { id: "students", label: "Students", icon: Users, count: overview?.metrics.totalStudents },
-            { id: "lectures", label: "Lectures & Audio", icon: FileText, count: overview?.metrics.totalLectures },
-            { id: "ai", label: "AI Engine", icon: Sparkles, count: overview?.metrics.totalAiGenerations },
-            { id: "reviews", label: "Reviews", icon: Star, count: overview?.metrics.totalReviews },
+            { id: "students", label: "Students", icon: Users, count: overview?.metrics?.totalStudents ?? (students.length > 0 ? students.length : null) },
+            { id: "lectures", label: "Lectures & Audio", icon: FileText, count: overview?.metrics?.totalLectures ?? (lectures.length > 0 ? lectures.length : null) },
+            { id: "ai", label: "AI Engine", icon: Sparkles, count: overview?.metrics?.totalAiGenerations ?? (aiRuns.length > 0 ? aiRuns.length : null) },
+            { id: "reviews", label: "Reviews", icon: Star, count: overview?.metrics?.totalReviews ?? (reviews.length > 0 ? reviews.length : null) },
             { id: "broadcast", label: "Announcements", icon: Radio, count: null },
             { id: "system", label: "System Health", icon: Server, count: null },
           ].map((tab) => {
@@ -636,12 +636,16 @@ export function AdminDashboard({ adminEmail }: { adminEmail: string }) {
                     </div>
                   </div>
                   <div className="text-3xl font-extrabold text-white tracking-tight">
-                    {overview?.metrics.totalStudents ?? "—"}
+                    {overview?.metrics?.totalStudents ?? (students.length > 0 ? students.length : "—")}
                   </div>
                   <div className="mt-2.5 flex items-center gap-2 text-[11px] text-slate-400">
-                    <span className="text-emerald-400 font-semibold">{overview?.metrics.onboardedStudents ?? 0} onboarded</span>
+                    <span className="text-emerald-400 font-semibold">
+                      {overview?.metrics?.onboardedStudents ?? students.filter((s) => s.onboardingComplete).length} onboarded
+                    </span>
                     <span>•</span>
-                    <span>{overview?.metrics.pendingOnboarding ?? 0} pending</span>
+                    <span>
+                      {overview?.metrics?.pendingOnboarding ?? students.filter((s) => !s.onboardingComplete).length} pending
+                    </span>
                   </div>
                 </div>
 

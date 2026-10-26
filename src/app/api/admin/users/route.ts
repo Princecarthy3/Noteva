@@ -22,27 +22,12 @@ export async function GET(request: Request) {
       adminClient
         .from("profiles")
         .select(
-          "id, full_name, university, degree, country_code, country_name, academic_level, current_semester, onboarding_complete, onboarding_step, workspace_tour_completed, created_at, updated_at"
+          "id, full_name, university, degree, country_code, country_name, academic_level, current_semester, onboarding_complete, onboarding_step, created_at, updated_at"
         )
         .order("created_at", { ascending: false }),
       adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 }),
       adminClient.from("lectures").select("id, user_id"),
     ]);
-
-    if (profilesRes.error) {
-      throw profilesRes.error;
-    }
-
-    const authMap = new Map<string, { email: string; lastSignIn: string | null; confirmedAt: string | null }>();
-    if (authUsersRes.data?.users) {
-      for (const u of authUsersRes.data.users) {
-        authMap.set(u.id, {
-          email: u.email ?? "",
-          lastSignIn: u.last_sign_in_at ?? null,
-          confirmedAt: u.email_confirmed_at ?? null,
-        });
-      }
-    }
 
     // Map lecture counts by user
     const lectureCounts = new Map<string, number>();
@@ -52,27 +37,108 @@ export async function GET(request: Request) {
       }
     }
 
-    let users = (profilesRes.data ?? []).map((p) => {
-      const authInfo = authMap.get(p.id);
-      return {
-        id: p.id,
-        fullName: p.full_name || "Anonymous Student",
-        email: authInfo?.email || "No email",
-        university: p.university || "Not specified",
-        degree: p.degree || "Not specified",
-        academicLevel: p.academic_level || "Not specified",
-        countryName: p.country_name || "Unknown",
-        countryCode: p.country_code || null,
-        currentSemester: p.current_semester || null,
-        onboardingComplete: p.onboarding_complete,
-        workspaceTourCompleted: p.workspace_tour_completed,
-        lecturesCount: lectureCounts.get(p.id) || 0,
-        lastSignIn: authInfo?.lastSignIn || null,
-        emailConfirmed: Boolean(authInfo?.confirmedAt),
-        createdAt: p.created_at,
-        updatedAt: p.updated_at,
-      };
-    });
+    // Map profiles by ID
+    const profiles = profilesRes.data ?? [];
+    const profilesMap = new Map(profiles.map((p) => [p.id, p]));
+    const handledProfileIds = new Set<string>();
+
+    const authUsers = authUsersRes.data?.users ?? [];
+    type StudentRecord = {
+      id: string;
+      fullName: string;
+      email: string;
+      university: string;
+      degree: string;
+      academicLevel: string;
+      countryName: string;
+      countryCode: string | null;
+      currentSemester: string | null;
+      onboardingComplete: boolean;
+      workspaceTourCompleted: boolean;
+      lecturesCount: number;
+      lastSignIn: string | null;
+      emailConfirmed: boolean;
+      createdAt: string;
+      updatedAt: string;
+    };
+
+    const studentList: StudentRecord[] = [];
+
+    // 1. Process all auth accounts
+    for (const authUser of authUsers) {
+      handledProfileIds.add(authUser.id);
+      const profile = profilesMap.get(authUser.id);
+
+      if (profile) {
+        studentList.push({
+          id: profile.id,
+          fullName: profile.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name || "Student",
+          email: authUser.email || "No email",
+          university: profile.university || "Not specified",
+          degree: profile.degree || "Not specified",
+          academicLevel: profile.academic_level || "Not specified",
+          countryName: profile.country_name || "Unknown",
+          countryCode: profile.country_code || null,
+          currentSemester: profile.current_semester || null,
+          onboardingComplete: Boolean(profile.onboarding_complete),
+          workspaceTourCompleted: Boolean(profile.onboarding_complete),
+          lecturesCount: lectureCounts.get(profile.id) || 0,
+          lastSignIn: authUser.last_sign_in_at || null,
+          emailConfirmed: Boolean(authUser.email_confirmed_at),
+          createdAt: profile.created_at || authUser.created_at,
+          updatedAt: profile.updated_at || authUser.created_at,
+        });
+      } else {
+        // Registered auth account without a profile row yet
+        studentList.push({
+          id: authUser.id,
+          fullName: authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split("@")[0] || "New Student",
+          email: authUser.email || "No email",
+          university: "Pending Setup",
+          degree: "—",
+          academicLevel: "—",
+          countryName: "—",
+          countryCode: null,
+          currentSemester: null,
+          onboardingComplete: false,
+          workspaceTourCompleted: false,
+          lecturesCount: lectureCounts.get(authUser.id) || 0,
+          lastSignIn: authUser.last_sign_in_at || null,
+          emailConfirmed: Boolean(authUser.email_confirmed_at),
+          createdAt: authUser.created_at,
+          updatedAt: authUser.created_at,
+        });
+      }
+    }
+
+    // 2. Include any profile rows that might not be in auth list
+    for (const profile of profiles) {
+      if (!handledProfileIds.has(profile.id)) {
+        studentList.push({
+          id: profile.id,
+          fullName: profile.full_name || "Student",
+          email: "No linked auth email",
+          university: profile.university || "Not specified",
+          degree: profile.degree || "Not specified",
+          academicLevel: profile.academic_level || "Not specified",
+          countryName: profile.country_name || "Unknown",
+          countryCode: profile.country_code || null,
+          currentSemester: profile.current_semester || null,
+          onboardingComplete: Boolean(profile.onboarding_complete),
+          workspaceTourCompleted: Boolean(profile.onboarding_complete),
+          lecturesCount: lectureCounts.get(profile.id) || 0,
+          lastSignIn: null,
+          emailConfirmed: false,
+          createdAt: profile.created_at,
+          updatedAt: profile.updated_at,
+        });
+      }
+    }
+
+    // Sort by created date descending
+    let users = studentList.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
     // Apply filtering
     if (filter === "onboarded") {

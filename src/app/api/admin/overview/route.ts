@@ -18,6 +18,7 @@ export async function GET() {
     // Run parallel analytical queries using Supabase Admin
     const [
       profilesRes,
+      authUsersRes,
       lecturesRes,
       aiGensRes,
       notesRes,
@@ -28,47 +29,51 @@ export async function GET() {
       recentAiRes,
       storageBucketsRes,
     ] = await Promise.all([
-      // 1. All profiles count & onboarding stats
-      adminClient.from("profiles").select("id, onboarding_complete, workspace_tour_completed"),
-      // 2. All lectures status, source, duration
+      // 1. All profiles count & onboarding stats (only valid columns)
+      adminClient.from("profiles").select("id, onboarding_complete, full_name, university"),
+      // 2. All auth accounts to accurately count registered students
+      adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+      // 3. All lectures status, source, duration
       adminClient.from("lectures").select("id, status, source_type, duration_seconds"),
-      // 3. AI generations status & tasks
+      // 4. AI generations status & tasks
       adminClient.from("ai_generations").select("id, status, task, model"),
-      // 4. Notes count
+      // 5. Notes count
       adminClient.from("notes").select("id", { count: "exact", head: true }),
-      // 5. Student reviews rating
+      // 6. Student reviews rating
       adminClient.from("student_reviews").select("id, rating"),
-      // 6. Study groups count
+      // 7. Study groups count
       adminClient.from("study_groups").select("id", { count: "exact", head: true }),
-      // 7. Recent 6 signups
+      // 8. Recent 6 signups
       adminClient
         .from("profiles")
         .select("id, full_name, university, degree, country_name, created_at, onboarding_complete")
         .order("created_at", { ascending: false })
         .limit(6),
-      // 8. Recent 6 lectures
+      // 9. Recent 6 lectures
       adminClient
         .from("lectures")
         .select("id, user_id, title, source_type, status, duration_seconds, created_at")
         .order("created_at", { ascending: false })
         .limit(6),
-      // 9. Recent 6 AI generations
+      // 10. Recent 6 AI generations
       adminClient
         .from("ai_generations")
         .select("id, owner_id, task, status, model, created_at, error_code")
         .order("created_at", { ascending: false })
         .limit(6),
-      // 10. Check storage bucket
+      // 11. Check storage bucket
       adminClient.storage.listBuckets(),
     ]);
 
     const dbLatencyMs = Date.now() - startTime;
 
-    // Profiles analytics
+    // Profiles & Auth accounts analytics
     const profiles = profilesRes.data ?? [];
-    const totalStudents = profiles.length;
+    const authUsers = authUsersRes.data?.users ?? [];
+    const totalStudents = Math.max(authUsers.length, profiles.length);
     const onboardedStudents = profiles.filter((p) => p.onboarding_complete).length;
-    const tourCompleted = profiles.filter((p) => p.workspace_tour_completed).length;
+    const pendingOnboarding = Math.max(0, totalStudents - onboardedStudents);
+    const tourCompleted = onboardedStudents;
 
     // Lectures analytics
     const lectures = lecturesRes.data ?? [];
