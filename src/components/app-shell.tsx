@@ -998,7 +998,7 @@ export function AppShell({
               </button>
 
               {notificationsOpen && (
-                <div className="glass-panel absolute right-0 top-12 z-50 w-[min(320px,calc(100vw-24px))] rounded-[24px] p-4 shadow-[0_20px_60px_rgba(35,28,68,.16)]">
+                <div className="glass-panel absolute right-0 top-12 z-50 w-[min(20rem,calc(100vw-1.5rem))] min-w-[16rem] max-w-[calc(100vw-1.5rem)] rounded-[24px] p-4 shadow-[0_20px_60px_rgba(35,28,68,.16)]">
                   <div className="flex items-center justify-between border-b border-[#f0edf5] pb-2.5">
                     <b className="text-xs font-black text-[#17132d]">Notifications</b>
                     <span className="text-[10px] font-extrabold text-[#7259e8]">

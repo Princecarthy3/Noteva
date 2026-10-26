@@ -869,11 +869,12 @@ html.motion-ready [data-card-reveal]:nth-child(6) { transition-delay: 400ms; }
   min-width: 0;
 }
 
-/* Common card surfaces: keep content inside rounded bounds */
-.workspace-shell [class*="rounded-2xl"],
-.workspace-shell [class*="rounded-3xl"],
-.workspace-shell [class*="rounded-[24px]"],
-.workspace-shell [class*="rounded-xl"] {
+/* Common card surfaces: keep content inside rounded bounds.
+   Skip absolute/fixed panels (dropdowns, modals) so they keep their own width. */
+.workspace-shell [class*="rounded-2xl"]:not(.absolute):not(.fixed),
+.workspace-shell [class*="rounded-3xl"]:not(.absolute):not(.fixed),
+.workspace-shell [class*="rounded-[24px]"]:not(.absolute):not(.fixed),
+.workspace-shell [class*="rounded-xl"]:not(.absolute):not(.fixed) {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
