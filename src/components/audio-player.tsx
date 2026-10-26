@@ -8,15 +8,12 @@ import {
   RotateCw,
   Volume2,
   VolumeX,
-  Gauge,
   LoaderCircle,
   FileAudio,
-  RefreshCw,
 } from "lucide-react";
 
 interface AudioPlayerProps {
   src: string;
-  fallbackSrc?: string;
   title?: string;
   className?: string;
   variant?: "card" | "compact" | "banner";
@@ -33,7 +30,6 @@ function formatTime(seconds: number): string {
 
 export function AudioPlayer({
   src,
-  fallbackSrc,
   title,
   className = "",
   variant = "card",
@@ -41,8 +37,7 @@ export function AudioPlayer({
   durationHintSeconds,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [activeSrc, setActiveSrc] = useState(src);
-  const [hasTriedFallback, setHasTriedFallback] = useState(false);
+  const durationProbeRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -50,12 +45,13 @@ export function AudioPlayer({
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [ended, setEnded] = useState(false);
 
-  // Sync activeSrc whenever incoming src prop changes
-  useEffect(() => {
-    setActiveSrc(src);
-    setHasTriedFallback(false);
-  }, [src]);
+  // Prefer same-origin proxy paths for reliable seeking / duration on WebM.
+  const resolvedSrc =
+    src && src.includes("supabase") && src.includes("/storage/")
+      ? src // already a full URL; keep if caller insists
+      : src;
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -64,33 +60,36 @@ export function AudioPlayer({
     setIsLoading(true);
     setHasError(false);
     setCurrentTime(0);
-    setDuration(
-      typeof durationHintSeconds === "number" && Number.isFinite(durationHintSeconds) && durationHintSeconds > 0
-        ? durationHintSeconds
-        : 0
-    );
+    setDuration(0);
     setIsPlaying(false);
+    setEnded(false);
+    durationProbeRef.current = null;
 
     const syncDuration = () => {
-      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      if (Number.isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity) {
         setDuration(audio.duration);
         setIsLoading(false);
         return;
       }
 
-      const lastSeekableRange = audio.seekable ? audio.seekable.length - 1 : -1;
+      const lastSeekableRange = audio.seekable.length - 1;
       if (lastSeekableRange >= 0) {
         const seekableEnd = audio.seekable.end(lastSeekableRange);
         if (Number.isFinite(seekableEnd) && seekableEnd > 0) {
-          setDuration((prev) => Math.max(prev, seekableEnd));
+          setDuration(seekableEnd);
           setIsLoading(false);
           return;
         }
       }
 
-      if (durationHintSeconds && durationHintSeconds > 0) {
-        setDuration(durationHintSeconds);
-        setIsLoading(false);
+      // WebM/Opus often reports Infinity until fully buffered — probe once.
+      if (audio.duration === Infinity && durationProbeRef.current === null) {
+        durationProbeRef.current = audio.currentTime;
+        try {
+          audio.currentTime = 1e101;
+        } catch {
+          durationProbeRef.current = null;
+        }
       }
     };
 
@@ -100,28 +99,57 @@ export function AudioPlayer({
     };
 
     const onCanPlay = () => {
-      syncDuration();
       setIsLoading(false);
+      syncDuration();
     };
 
     const onTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-      if (audio.currentTime > duration) {
-        setDuration(audio.currentTime);
+      if (durationProbeRef.current === null) {
+        setCurrentTime(audio.currentTime);
       }
     };
 
     const onEnded = () => {
       setIsPlaying(false);
+      setEnded(true);
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         setCurrentTime(audio.duration);
       }
     };
 
-    const onPlay = () => setIsPlaying(true);
+    const onSeeked = () => {
+      const previousTime = durationProbeRef.current;
+      if (previousTime === null) {
+        setCurrentTime(audio.currentTime);
+        return;
+      }
+
+      const measuredDuration =
+        Number.isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity
+          ? audio.duration
+          : audio.seekable.length
+            ? audio.seekable.end(audio.seekable.length - 1)
+            : 0;
+      durationProbeRef.current = null;
+      if (Number.isFinite(measuredDuration) && measuredDuration > 0) {
+        setDuration(measuredDuration);
+        const restoredTime = Math.min(previousTime, measuredDuration);
+        audio.currentTime = restoredTime;
+        setCurrentTime(restoredTime);
+      }
+      setIsLoading(false);
+    };
+
+    const onPlay = () => {
+      setIsPlaying(true);
+      setEnded(false);
+    };
     const onPause = () => setIsPlaying(false);
     const onWaiting = () => setIsLoading(true);
-    const onCanPlayThrough = () => setIsLoading(false);
+    const onCanPlayThrough = () => {
+      setIsLoading(false);
+      syncDuration();
+    };
 
     const onLoadStart = () => {
       setIsLoading(true);
@@ -129,18 +157,9 @@ export function AudioPlayer({
     };
 
     const onError = () => {
-      // Ignore user or navigation aborts
-      if (audio.error?.code === 1) return;
-
-      // If we haven't tried the fallback proxy yet, switch to it
-      if (!hasTriedFallback && fallbackSrc && fallbackSrc !== activeSrc) {
-        setHasTriedFallback(true);
-        setActiveSrc(fallbackSrc);
-        return;
-      }
-
       setIsLoading(false);
       setHasError(true);
+      durationProbeRef.current = null;
     };
 
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
@@ -151,10 +170,14 @@ export function AudioPlayer({
     audio.addEventListener("loadstart", onLoadStart);
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("ended", onEnded);
+    audio.addEventListener("seeked", onSeeked);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("waiting", onWaiting);
     audio.addEventListener("error", onError);
+
+    // Force reload when src changes so duration/metadata are re-read.
+    audio.load();
 
     if (autoPlay) {
       audio.play().catch(() => setIsPlaying(false));
@@ -169,13 +192,15 @@ export function AudioPlayer({
       audio.removeEventListener("loadstart", onLoadStart);
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("seeked", onSeeked);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("waiting", onWaiting);
       audio.removeEventListener("error", onError);
+      durationProbeRef.current = null;
       audio.pause();
     };
-  }, [activeSrc, autoPlay, durationHintSeconds, fallbackSrc, hasTriedFallback]);
+  }, [resolvedSrc, autoPlay]);
 
   function togglePlay() {
     const audio = audioRef.current;
@@ -183,12 +208,18 @@ export function AudioPlayer({
     if (isPlaying) {
       audio.pause();
       setIsPlaying(false);
-    } else {
-      audio
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+      return;
     }
+    // Replay from the start when the track has finished.
+    if (ended || (displayDuration > 0 && audio.currentTime >= displayDuration - 0.15)) {
+      audio.currentTime = 0;
+      setCurrentTime(0);
+      setEnded(false);
+    }
+    audio
+      .play()
+      .then(() => setIsPlaying(true))
+      .catch(() => setIsPlaying(false));
   }
 
   function handleSeek(newTime: number) {
@@ -198,11 +229,13 @@ export function AudioPlayer({
     const targetTime = Math.min(Math.max(newTime, 0), maxTime);
     audio.currentTime = targetTime;
     setCurrentTime(targetTime);
+    setEnded(false);
   }
 
   function skip(seconds: number) {
     const audio = audioRef.current;
     if (!audio) return;
+    if (displayDuration <= 0) return;
     handleSeek(audio.currentTime + seconds);
   }
 
@@ -223,14 +256,6 @@ export function AudioPlayer({
     setPlaybackRate(nextSpeed);
   }
 
-  function retryPlayback() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    setHasError(false);
-    setIsLoading(true);
-    audio.load();
-  }
-
   const validDurationHint =
     typeof durationHintSeconds === "number" &&
     Number.isFinite(durationHintSeconds) &&
@@ -238,31 +263,47 @@ export function AudioPlayer({
       ? durationHintSeconds
       : 0;
   const displayDuration = Number.isFinite(duration) && duration > 0 ? duration : validDurationHint;
-  const progressPercent = displayDuration > 0 ? Math.min((currentTime / displayDuration) * 100, 100) : 0;
+  const progressPercent =
+    displayDuration > 0 ? Math.min((currentTime / displayDuration) * 100, 100) : 0;
+
+  if (hasError) {
+    return (
+      <div
+        className={`flex items-center gap-2 rounded-xl border border-[#eeeaf2] bg-[#fbfaff] p-3 text-[11px] text-[#868093] ${className}`}
+      >
+        <FileAudio className="size-4 shrink-0 text-[#9b95a5]" />
+        <span>Media recording preview is unavailable. Try refreshing the page.</span>
+      </div>
+    );
+  }
 
   if (variant === "compact") {
     return (
-      <div className={`flex items-center gap-3 rounded-xl border border-[#e8e4f1] bg-white p-2.5 shadow-sm ${className}`}>
-        <audio ref={audioRef} src={activeSrc} preload="metadata" />
+      <div
+        className={`flex items-center gap-3 rounded-xl border border-[#e8e4f1] bg-white p-2.5 shadow-sm ${className}`}
+      >
+        <audio ref={audioRef} src={resolvedSrc} preload="auto" playsInline />
         <button
           type="button"
           onClick={togglePlay}
-          className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#7259e8] text-white transition hover:bg-[#5f46dd]"
+          className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#7259e8] text-white transition hover:bg-[#5f46dd]"
           aria-label={isPlaying ? "Pause" : "Play"}
         >
           {isLoading ? (
-            <LoaderCircle className="size-4 animate-spin" />
+            <LoaderCircle className="size-3.5 animate-spin" />
           ) : isPlaying ? (
-            <Pause className="size-4 fill-white" />
+            <Pause className="size-3.5 fill-white" />
           ) : (
-            <Play className="size-4 fill-white ml-0.5" />
+            <Play className="size-3.5 fill-white ml-0.5" />
           )}
         </button>
 
         <div className="min-w-0 flex-1">
-          {title && <p className="truncate text-xs font-extrabold text-[#17132d]">{title}</p>}
+          {title && <p className="truncate text-[10px] font-extrabold text-[#17132d]">{title}</p>}
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-[#868093] tabular-nums">{formatTime(currentTime)}</span>
+            <span className="text-[9px] font-bold text-[#868093] tabular-nums">
+              {formatTime(currentTime)}
+            </span>
             <input
               type="range"
               min={0}
@@ -270,168 +311,118 @@ export function AudioPlayer({
               step={0.1}
               value={currentTime}
               onChange={(e) => handleSeek(parseFloat(e.target.value))}
-              disabled={displayDuration <= 0 && currentTime <= 0}
-              className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-[#eeeaf2] accent-[#7259e8]"
-              aria-label="Seek audio"
+              disabled={displayDuration <= 0}
+              className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-[#e7e1f4] accent-[#7259e8]"
+              aria-label="Audio progress"
             />
-            <span className="text-[11px] font-bold text-[#868093] tabular-nums">{formatTime(displayDuration)}</span>
+            <span className="text-[9px] font-bold text-[#868093] tabular-nums">
+              {formatTime(displayDuration)}
+            </span>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => skip(-10)}
-          className="grid size-8 shrink-0 place-items-center rounded-lg text-[#777180] transition hover:bg-[#f2eff9] hover:text-[#7259e8]"
-          aria-label="Skip backward 10 seconds"
-          title="Rewind 10 seconds"
-        >
-          <RotateCcw className="size-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => skip(10)}
-          className="grid size-8 shrink-0 place-items-center rounded-lg text-[#777180] transition hover:bg-[#f2eff9] hover:text-[#7259e8]"
-          aria-label="Skip forward 10 seconds"
-          title="Forward 10 seconds"
-        >
-          <RotateCw className="size-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={cycleSpeed}
-          className="rounded-md bg-[#f4f2f8] px-2.5 py-1 text-[11px] font-black text-[#7259e8] hover:bg-[#ece8f5]"
-          title="Playback speed"
-        >
-          {playbackRate}x
-        </button>
       </div>
     );
   }
 
   return (
     <div
-      className={`rounded-2xl border border-[#e4ddfa] bg-gradient-to-b from-[#fbfaff] to-[#f5f2ff] p-4 shadow-sm ${className}`}
+      className={`rounded-2xl border border-[#e4ddfa] bg-gradient-to-br from-[#faf8ff] to-[#f3effc] p-4 shadow-sm ${className}`}
     >
-      <audio ref={audioRef} src={activeSrc} preload="metadata" />
+      <audio ref={audioRef} src={resolvedSrc} preload="auto" playsInline />
 
-      {/* Top row: Title and Controls */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#7259e8]/10 text-[#7259e8]">
-            <FileAudio className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-black text-[#17132d]">
-              {title || "Lecture audio recording"}
-            </p>
-            <p className="text-[11px] text-[#868093]">Original audio capture · Playback</p>
-          </div>
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#efe9fb] text-[#7259e8]">
+          <FileAudio className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-extrabold text-[#17132d]">
+            {title || "Original audio capture"}
+          </p>
+          <p className="mt-0.5 text-[10px] text-[#868093]">Playback</p>
         </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={cycleSpeed}
-            className="flex items-center gap-1 rounded-lg border border-[#e2dcf2] bg-white px-2.5 py-1 text-[11px] font-black text-[#7259e8] hover:bg-[#f6f4fe] transition"
-            title="Change playback speed"
+            className="rounded-lg border border-[#e6e1f0] bg-white px-2 py-1 text-[10px] font-extrabold text-[#6a6377] hover:bg-[#f4f1fb]"
+            aria-label="Change playback speed"
+            title="Playback speed"
           >
-            <Gauge className="size-3.5" />
-            <span>{playbackRate}x</span>
+            {playbackRate}x
           </button>
-
           <button
             type="button"
             onClick={toggleMute}
-            className="grid size-8 place-items-center rounded-lg border border-[#e2dcf2] bg-white text-[#6b6478] hover:bg-[#f6f4fe] transition"
+            className="grid size-8 place-items-center rounded-lg border border-[#e6e1f0] bg-white text-[#6a6377] hover:bg-[#f4f1fb]"
             aria-label={isMuted ? "Unmute" : "Mute"}
           >
-            {isMuted ? <VolumeX className="size-4 text-[#e0544c]" /> : <Volume2 className="size-4" />}
+            {isMuted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
           </button>
         </div>
       </div>
 
-      {hasError ? (
-        <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-[#f3d9d7] bg-[#fff5f4] p-3 text-xs text-[#a44e48]">
-          <div className="flex items-center gap-2">
-            <FileAudio className="size-4 shrink-0 text-[#c85a53]" />
-            <span>Audio stream could not be loaded immediately.</span>
-          </div>
-          <button
-            type="button"
-            onClick={retryPlayback}
-            className="inline-flex items-center gap-1 rounded-lg bg-[#7259e8] px-2.5 py-1 text-[11px] font-black text-white hover:bg-[#6045de]"
-          >
-            <RefreshCw className="size-3" /> Retry
-          </button>
+      <div className="mt-3.5 space-y-1">
+        <div className="relative flex items-center">
+          <input
+            type="range"
+            min={0}
+            max={displayDuration || 100}
+            step={0.1}
+            value={currentTime}
+            onChange={(e) => handleSeek(parseFloat(e.target.value))}
+            disabled={displayDuration <= 0}
+            className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-[#e7e1f4] accent-[#7259e8] transition"
+            style={{
+              background: `linear-gradient(to right, #7259e8 ${progressPercent}%, #e7e1f4 ${progressPercent}%)`,
+            }}
+            aria-label="Audio progress slider"
+          />
         </div>
-      ) : (
-        <>
-          {/* Scrubber slider */}
-          <div className="mt-3.5 space-y-1">
-            <div className="relative flex items-center">
-              <input
-                type="range"
-                min={0}
-                max={displayDuration || 100}
-                step={0.1}
-                value={currentTime}
-                onChange={(e) => handleSeek(parseFloat(e.target.value))}
-                disabled={displayDuration <= 0 && currentTime <= 0}
-                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-[#e7e1f4] accent-[#7259e8] transition"
-                style={{
-                  background: `linear-gradient(to right, #7259e8 ${progressPercent}%, #e7e1f4 ${progressPercent}%)`,
-                }}
-                aria-label="Audio progress slider"
-              />
-            </div>
 
-            <div className="flex justify-between text-[11px] font-bold text-[#8a8397] tabular-nums">
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(displayDuration)}</span>
-            </div>
-          </div>
+        <div className="flex justify-between text-[10px] font-bold text-[#8a8397] tabular-nums">
+          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(displayDuration)}</span>
+        </div>
+      </div>
 
-          {/* Main playback control bar */}
-          <div className="mt-2.5 flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => skip(-10)}
-              className="grid size-9 place-items-center rounded-xl bg-white text-[#6a6377] border border-[#e6e1f0] hover:bg-[#f4f1fb] transition"
-              aria-label="Skip backward 10 seconds"
-              title="Rewind 10 seconds"
-            >
-              <RotateCcw className="size-4" />
-            </button>
+      <div className="mt-2.5 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          onClick={() => skip(-10)}
+          disabled={displayDuration <= 0}
+          className="grid size-8 place-items-center rounded-xl border border-[#e6e1f0] bg-white text-[#6a6377] transition hover:bg-[#f4f1fb] disabled:opacity-40"
+          aria-label="Skip backward 10 seconds"
+          title="Rewind 10 seconds"
+        >
+          <RotateCcw className="size-3.5" />
+        </button>
 
-            <button
-              type="button"
-              onClick={togglePlay}
-              className="grid size-12 place-items-center rounded-full bg-[#7259e8] text-white shadow-md shadow-[#7259e8]/25 hover:bg-[#5f46dd] transition active:scale-95"
-              aria-label={isPlaying ? "Pause audio" : "Play audio"}
-            >
-              {isLoading ? (
-                <LoaderCircle className="size-5 animate-spin" />
-              ) : isPlaying ? (
-                <Pause className="size-5 fill-white" />
-              ) : (
-                <Play className="size-5 fill-white ml-0.5" />
-              )}
-            </button>
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="grid size-11 place-items-center rounded-full bg-[#7259e8] text-white shadow-md shadow-[#7259e8]/25 transition hover:bg-[#5f46dd] active:scale-95"
+          aria-label={isPlaying ? "Pause audio" : "Play audio"}
+        >
+          {isLoading ? (
+            <LoaderCircle className="size-5 animate-spin" />
+          ) : isPlaying ? (
+            <Pause className="size-5 fill-white" />
+          ) : (
+            <Play className="size-5 fill-white ml-0.5" />
+          )}
+        </button>
 
-            <button
-              type="button"
-              onClick={() => skip(10)}
-              className="grid size-9 place-items-center rounded-xl bg-white text-[#6a6377] border border-[#e6e1f0] hover:bg-[#f4f1fb] transition"
-              aria-label="Skip forward 10 seconds"
-              title="Forward 10 seconds"
-            >
-              <RotateCw className="size-4" />
-            </button>
-          </div>
-        </>
-      )}
+        <button
+          type="button"
+          onClick={() => skip(10)}
+          disabled={displayDuration <= 0}
+          className="grid size-8 place-items-center rounded-xl border border-[#e6e1f0] bg-white text-[#6a6377] transition hover:bg-[#f4f1fb] disabled:opacity-40"
+          aria-label="Skip forward 10 seconds"
+          title="Forward 10 seconds"
+        >
+          <RotateCw className="size-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

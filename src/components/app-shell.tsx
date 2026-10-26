@@ -39,6 +39,7 @@ import {
   Link2,
   ListChecks,
   LoaderCircle,
+  Maximize2,
   MapPin,
   Maximize2,
   Menu,
@@ -1507,7 +1508,7 @@ function FunctionalNotesView({
 
                 <div className="min-w-0 flex-1">
                   <h3
-                    className={`text-[15px] font-extrabold text-[#17132d] group-hover:text-[#7259e8] ${
+                    className={`min-w-0 break-words text-[15px] font-extrabold text-[#17132d] group-hover:text-[#7259e8] ${
                       layout === "grid" ? "mt-4" : "mt-2 sm:mt-0"
                     }`}
                   >
@@ -1573,6 +1574,7 @@ function FunctionalNoteModal({
   const router = useRouter();
   const [note, setNote] = useState<OrganizedNoteData | null>(lecture.note ?? null);
   const [modalTab, setModalTab] = useState<"notes" | "transcript">(lecture.note ? "notes" : "notes");
+  const [notesFullscreen, setNotesFullscreen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [copiedNote, setCopiedNote] = useState(false);
@@ -1724,6 +1726,13 @@ function FunctionalNoteModal({
             {note && (
               <div className="hidden sm:flex items-center gap-2">
                 <button
+                  onClick={() => setNotesFullscreen(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#e5e1eb] bg-white px-2.5 py-1 text-[10px] font-extrabold text-[#534e60] shadow-sm hover:bg-[#faf9fe]"
+                >
+                  <Maximize2 className="size-3" />
+                  Full screen
+                </button>
+                <button
                   onClick={exportNotePdf}
                   className="flex items-center gap-1.5 rounded-lg border border-[#cfc4f6] bg-[#f5f2ff] px-2.5 py-1 text-[10px] font-black text-[#7259e8] shadow-sm hover:bg-[#eae3fc]"
                 >
@@ -1808,6 +1817,31 @@ function FunctionalNoteModal({
                     </button>
                   </div>
                   <OrganizedNotesDisplay note={note} />
+
+                  {notesFullscreen && note && (
+                    <div className="fixed inset-0 z-[120] flex flex-col bg-white">
+                      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#ece8f4] bg-[#faf9fc] px-4 py-3 sm:px-6">
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-black uppercase tracking-[.14em] text-[#7259e8]">Generated notes</p>
+                          <h2 className="truncate text-sm font-black text-[#17132d] sm:text-base">{lecture.title}</h2>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setNotesFullscreen(false)}
+                          className="grid size-9 shrink-0 place-items-center rounded-xl border border-[#e6e2eb] bg-white text-[#5f586d] hover:bg-[#f4f1fb]"
+                          aria-label="Close full screen notes"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
+                        <div className="mx-auto max-w-3xl">
+                          <OrganizedNotesDisplay note={note} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               ) : lecture.transcript ? (
                 <div className="rounded-3xl border-2 border-dashed border-[#dcd6e8] bg-gradient-to-br from-[#faf9fe] to-[#f4f0ff] p-8 text-center sm:p-10">

@@ -6,6 +6,10 @@ export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * Same-origin media proxy with HTTP Range support so the browser audio element
+ * can seek, report duration, and replay reliably (especially for WebM/Opus).
+ */
 export async function GET(request: Request, context: RouteContext) {
   const { id } = await context.params;
   if (!uuidPattern.test(id)) {
@@ -19,7 +23,10 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Lecture storage is not configured." }, { status: 503 });
   }
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: "Sign in to access this media." }, { status: 401 });
   }
@@ -38,16 +45,6 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "No media file associated with this lecture." }, { status: 404 });
   }
 
-  // Generate a signed URL from private bucket
-  const { data: signedData, error: signError } = await supabase.storage
-    .from("lecture-media")
-    .createSignedUrl(lecture.storage_path, 7200);
-
-  if (!signError && signedData?.signedUrl) {
-    return NextResponse.redirect(signedData.signedUrl, 302);
-  }
-
-  // Fallback: download directly and stream response with Range support
   const { data: object, error: downloadError } = await supabase.storage
     .from("lecture-media")
     .download(lecture.storage_path);
@@ -56,39 +53,52 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Media file could not be read." }, { status: 500 });
   }
 
-  const mimeType = lecture.mime_type || "audio/webm";
-  const filename = encodeURIComponent(lecture.title || "lecture-media");
   const buffer = Buffer.from(await object.arrayBuffer());
-  const fileSize = buffer.length;
+  const total = buffer.byteLength;
+  const contentType = lecture.mime_type || "audio/webm";
+  const filename = encodeURIComponent(lecture.title || "lecture-media");
   const rangeHeader = request.headers.get("range");
 
-  if (rangeHeader) {
-    const parts = rangeHeader.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10) || 0;
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    const chunkSize = end - start + 1;
-    const chunk = buffer.subarray(start, end + 1);
+  const commonHeaders: Record<string, string> = {
+    "Content-Type": contentType,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "private, max-age=3600",
+    "Content-Disposition": `inline; filename="${filename}"`,
+  };
 
-    return new Response(chunk, {
-      status: 206,
-      headers: {
-        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunkSize.toString(),
-        "Content-Type": mimeType,
-        "Cache-Control": "private, max-age=3600",
-        "Content-Disposition": `inline; filename="${filename}"`,
-      },
-    });
+  if (rangeHeader) {
+    const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+    if (match) {
+      let start = match[1] ? parseInt(match[1], 10) : 0;
+      let end = match[2] ? parseInt(match[2], 10) : total - 1;
+      if (Number.isNaN(start)) start = 0;
+      if (Number.isNaN(end) || end >= total) end = total - 1;
+      if (start < 0 || start > end || start >= total) {
+        return new Response(null, {
+          status: 416,
+          headers: {
+            ...commonHeaders,
+            "Content-Range": `bytes */${total}`,
+          },
+        });
+      }
+      const chunk = buffer.subarray(start, end + 1);
+      return new Response(chunk, {
+        status: 206,
+        headers: {
+          ...commonHeaders,
+          "Content-Length": String(chunk.byteLength),
+          "Content-Range": `bytes ${start}-${end}/${total}`,
+        },
+      });
+    }
   }
 
   return new Response(buffer, {
+    status: 200,
     headers: {
-      "Content-Type": mimeType,
-      "Content-Length": fileSize.toString(),
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "private, max-age=3600",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      ...commonHeaders,
+      "Content-Length": String(total),
     },
   });
 }
