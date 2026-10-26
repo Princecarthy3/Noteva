@@ -832,7 +832,7 @@ export function AppShell({
   }
 
   return (
-    <div className="workspace-shell min-h-screen bg-[#f7f6fb] text-[#17132d]">
+    <div className="workspace-shell min-h-screen overflow-x-clip bg-[#f7f6fb] text-[#17132d]">
       {sidebarOpen && (
         <button
           aria-label="Close navigation"

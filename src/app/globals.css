@@ -800,3 +800,100 @@ html.motion-ready [data-card-reveal]:nth-child(6) { transition-delay: 400ms; }
     transform: translateY(0) scale(1);
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Layout containment — prevent cards/grids from stretching the page          */
+/* -------------------------------------------------------------------------- */
+
+.workspace-shell,
+.public-surface {
+  overflow-x: clip;
+}
+
+.workspace-shell .flex,
+.workspace-shell [class*="flex"],
+.workspace-shell .grid,
+.workspace-shell [class*="grid"],
+.public-surface .flex,
+.public-surface [class*="flex"],
+.public-surface .grid,
+.public-surface [class*="grid"] {
+  min-width: 0;
+}
+
+.workspace-shell .flex > *,
+.workspace-shell [class*="flex"] > *,
+.workspace-shell .grid > *,
+.workspace-shell [class*="grid"] > *,
+.public-surface .flex > *,
+.public-surface [class*="flex"] > * {
+  min-width: 0;
+}
+
+/* Long unbroken strings (course codes, URLs, filenames) wrap instead of stretching */
+.workspace-shell p,
+.workspace-shell h1,
+.workspace-shell h2,
+.workspace-shell h3,
+.workspace-shell h4,
+.workspace-shell span,
+.workspace-shell li,
+.workspace-shell label,
+.workspace-shell td,
+.workspace-shell th,
+.workspace-shell button,
+.public-surface p,
+.public-surface h1,
+.public-surface h2,
+.public-surface h3,
+.public-surface span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Flex/grid children must be allowed to shrink below content size */
+.workspace-shell .flex > *,
+.workspace-shell [class*="flex "] > *,
+.workspace-shell [class*=" grid"] > *,
+.workspace-shell .grid > * {
+  min-width: 0;
+}
+
+/* Common card surfaces: keep content inside rounded bounds */
+.workspace-shell [class*="rounded-2xl"],
+.workspace-shell [class*="rounded-3xl"],
+.workspace-shell [class*="rounded-[24px]"],
+.workspace-shell [class*="rounded-xl"] {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Images/media inside cards never force horizontal scroll */
+.workspace-shell img,
+.workspace-shell video,
+.workspace-shell iframe,
+.workspace-shell canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Sidebar labels stay truncated */
+.workspace-shell aside span,
+.workspace-shell nav span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tables / pre blocks scroll instead of expanding the card */
+.workspace-shell pre,
+.workspace-shell code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.workspace-shell table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
