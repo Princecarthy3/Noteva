@@ -182,6 +182,26 @@ export function ProfileSettings({
       </div>
     </section>
 
+    {profile.email?.toLowerCase() === "studystation.support@gmail.com" && (
+      <section className="profile-panel rounded-[24px] border border-indigo-200 bg-gradient-to-r from-indigo-50/80 to-purple-50/80 p-5 sm:p-7">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <h2 className="text-sm font-extrabold text-[#28233a]">Admin Command Center</h2>
+            </div>
+            <p className="mt-1 text-xs text-[#85808d]">Access platform metrics, student accounts, lectures, and system telemetry.</p>
+          </div>
+          <a
+            href="/admin"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#7259e8] px-4 text-xs font-extrabold text-white transition hover:bg-[#8069ed] shrink-0"
+          >
+            Open Admin Portal
+          </a>
+        </div>
+      </section>
+    )}
+
     <section className="profile-panel rounded-[24px] border border-[#e9e5ef] bg-white p-5 sm:p-7">
       <div><h2 className="text-sm font-extrabold text-[#28233a]">Session & account</h2><p className="mt-1 text-xs text-[#85808d]">Sign out on this device or permanently remove your account.</p></div>
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
