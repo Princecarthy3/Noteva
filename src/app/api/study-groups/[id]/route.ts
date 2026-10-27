@@ -317,7 +317,7 @@ export async function POST(request: Request, context: RouteContext) {
         ends_at: endsAt.toISOString(),
         status: "scheduled",
       })
-      .select("id, title, starts_at, ends_at, status, notes, call_room_id")
+      .select("id, title, starts_at, ends_at, status, notes")
       .single();
     if (error || !data) return fail("The group call could not be started. Check that the Stage 10 migration is applied.", 503);
     const { data: members, error: membersError } = await admin.from("group_members")
@@ -347,179 +347,14 @@ export async function POST(request: Request, context: RouteContext) {
       .gte("created_at", oneMinuteAgo);
     if (limitError) return fail("Message rate limit could not be checked. Please retry.", 503);
     if ((count ?? 0) >= 10) return fail("You have sent 10 messages in the last minute. Please wait before posting again.", 429);
-    const replyToId = typeof (body as { replyToId?: unknown }).replyToId === "string"
-      ? String((body as { replyToId?: unknown }).replyToId).trim()
-      : "";
-    const insertRow: Record<string, string> = {
-      group_id: id,
-      sender_id: auth.user.id,
-      body: message,
-    };
-    if (replyToId) insertRow.reply_to_id = replyToId;
-    const attempt = await admin.from("group_messages").insert(insertRow).select("id, sender_id, body, created_at").single();
-    let row = attempt.data;
-    if (attempt.error || !row) {
-      const retry = await admin.from("group_messages")
-        .insert({ group_id: id, sender_id: auth.user.id, body: message })
-        .select("id, sender_id, body, created_at")
-        .single();
-      if (retry.error || !retry.data) return fail("Your message could not be sent.", 500);
-      row = retry.data;
-    }
-    return NextResponse.json({
-      message: {
-        id: row.id,
-        body: row.body,
-        created_at: row.created_at,
-        isMine: true,
-        status: "delivered",
-        replyToId: replyToId || null,
-      },
-    }, { status: 201 });
-  }
-
-  if (action === "edit_message") {
-    const messageId = typeof (body as { messageId?: unknown }).messageId === "string" ? String((body as { messageId?: unknown }).messageId).trim() : "";
-    const nextBody = typeof body.text === "string" ? body.text.trim() : "";
-    if (!messageId) return fail("Choose a message to edit.");
-    if (nextBody.length < 1 || nextBody.length > 2000) return fail("Messages must be between 1 and 2,000 characters.");
-    const { data: existing, error: existingError } = await admin.from("group_messages")
-      .select("id, sender_id")
-      .eq("id", messageId)
-      .eq("group_id", id)
-      .maybeSingle();
-    if (existingError || !existing) return fail("Message not found.", 404);
-    if (existing.sender_id !== auth.user.id) return fail("You can only edit your own messages.", 403);
-    const editedAt = new Date().toISOString();
     const { data, error } = await admin.from("group_messages")
-      .update({ body: nextBody, edited_at: editedAt })
-      .eq("id", messageId)
-      .eq("group_id", id)
-      .select("id, body, created_at")
+      .insert({ group_id: id, sender_id: auth.user.id, body: message })
+      .select("id, sender_id, body, created_at")
       .single();
-    if (error || !data) {
-      const plain = await admin.from("group_messages")
-        .update({ body: nextBody })
-        .eq("id", messageId)
-        .eq("group_id", id)
-        .select("id, body, created_at")
-        .single();
-      if (plain.error || !plain.data) return fail("The message could not be edited.", 500);
-      return NextResponse.json({ message: { id: plain.data.id, body: plain.data.body, created_at: plain.data.created_at, isMine: true, editedAt } });
-    }
-    return NextResponse.json({ message: { id: data.id, body: data.body, created_at: data.created_at, isMine: true, editedAt } });
-  }
-
-  if (action === "delete_message") {
-    const messageId = typeof (body as { messageId?: unknown }).messageId === "string" ? String((body as { messageId?: unknown }).messageId).trim() : "";
-    if (!messageId) return fail("Choose a message to delete.");
-    const { data: existing, error: existingError } = await admin.from("group_messages")
-      .select("id, sender_id")
-      .eq("id", messageId)
-      .eq("group_id", id)
-      .maybeSingle();
-    if (existingError || !existing) return fail("Message not found.", 404);
-    const canModerate = role === "owner" || role === "moderator";
-    if (existing.sender_id !== auth.user.id && !canModerate) return fail("You can only delete your own messages.", 403);
-    const deletedAt = new Date().toISOString();
-    const soft = await admin.from("group_messages")
-      .update({ body: "Message deleted", deleted_at: deletedAt })
-      .eq("id", messageId)
-      .eq("group_id", id);
-    if (soft.error) {
-      const hard = await admin.from("group_messages").delete().eq("id", messageId).eq("group_id", id);
-      if (hard.error) return fail("The message could not be deleted.", 500);
-      return NextResponse.json({ success: true, hardDeleted: true });
-    }
-    return NextResponse.json({ success: true, message: { id: messageId, deletedAt, body: "", isMine: existing.sender_id === auth.user.id } });
-  }
-
-  if (action === "session") {
-    const replyToId = typeof (body as { replyToId?: unknown }).replyToId === "string"
-      ? String((body as { replyToId?: unknown }).replyToId).trim()
-      : "";
-    const insertRow: Record<string, string> = {
-      group_id: id,
-      sender_id: auth.user.id,
-      body: message,
-    };
-    if (replyToId) insertRow.reply_to_id = replyToId;
-    const attempt = await admin.from("group_messages").insert(insertRow).select("id, sender_id, body, created_at").single();
-    let row = attempt.data;
-    if (attempt.error || !row) {
-      const retry = await admin.from("group_messages")
-        .insert({ group_id: id, sender_id: auth.user.id, body: message })
-        .select("id, sender_id, body, created_at")
-        .single();
-      if (retry.error || !retry.data) return fail("Your message could not be sent.", 500);
-      row = retry.data;
-    }
+    if (error || !data) return fail("Your message could not be sent.", 500);
     return NextResponse.json({
-      message: {
-        id: row.id,
-        body: row.body,
-        created_at: row.created_at,
-        isMine: true,
-        status: "delivered",
-        replyToId: replyToId || null,
-      },
+      message: { id: data.id, body: data.body, created_at: data.created_at, isMine: true },
     }, { status: 201 });
-  }
-
-  if (action === "edit_message") {
-    const messageId = typeof (body as { messageId?: unknown }).messageId === "string" ? String((body as { messageId?: unknown }).messageId).trim() : "";
-    const nextBody = typeof body.text === "string" ? body.text.trim() : "";
-    if (!messageId) return fail("Choose a message to edit.");
-    if (nextBody.length < 1 || nextBody.length > 2000) return fail("Messages must be between 1 and 2,000 characters.");
-    const { data: existing, error: existingError } = await admin.from("group_messages")
-      .select("id, sender_id")
-      .eq("id", messageId)
-      .eq("group_id", id)
-      .maybeSingle();
-    if (existingError || !existing) return fail("Message not found.", 404);
-    if (existing.sender_id !== auth.user.id) return fail("You can only edit your own messages.", 403);
-    const editedAt = new Date().toISOString();
-    const { data, error } = await admin.from("group_messages")
-      .update({ body: nextBody, edited_at: editedAt })
-      .eq("id", messageId)
-      .eq("group_id", id)
-      .select("id, body, created_at")
-      .single();
-    if (error || !data) {
-      const plain = await admin.from("group_messages")
-        .update({ body: nextBody })
-        .eq("id", messageId)
-        .eq("group_id", id)
-        .select("id, body, created_at")
-        .single();
-      if (plain.error || !plain.data) return fail("The message could not be edited.", 500);
-      return NextResponse.json({ message: { id: plain.data.id, body: plain.data.body, created_at: plain.data.created_at, isMine: true, editedAt } });
-    }
-    return NextResponse.json({ message: { id: data.id, body: data.body, created_at: data.created_at, isMine: true, editedAt } });
-  }
-
-  if (action === "delete_message") {
-    const messageId = typeof (body as { messageId?: unknown }).messageId === "string" ? String((body as { messageId?: unknown }).messageId).trim() : "";
-    if (!messageId) return fail("Choose a message to delete.");
-    const { data: existing, error: existingError } = await admin.from("group_messages")
-      .select("id, sender_id")
-      .eq("id", messageId)
-      .eq("group_id", id)
-      .maybeSingle();
-    if (existingError || !existing) return fail("Message not found.", 404);
-    const canModerate = role === "owner" || role === "moderator";
-    if (existing.sender_id !== auth.user.id && !canModerate) return fail("You can only delete your own messages.", 403);
-    const deletedAt = new Date().toISOString();
-    const soft = await admin.from("group_messages")
-      .update({ body: "Message deleted", deleted_at: deletedAt })
-      .eq("id", messageId)
-      .eq("group_id", id);
-    if (soft.error) {
-      const hard = await admin.from("group_messages").delete().eq("id", messageId).eq("group_id", id);
-      if (hard.error) return fail("The message could not be deleted.", 500);
-      return NextResponse.json({ success: true, hardDeleted: true });
-    }
-    return NextResponse.json({ success: true, message: { id: messageId, deletedAt, body: "", isMine: existing.sender_id === auth.user.id } });
   }
 
   if (action === "session") {
