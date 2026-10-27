@@ -219,6 +219,7 @@ export function StudyCallDialog({
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void joinCall()} disabled={launching} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-[11px] font-extrabold text-white disabled:opacity-60">{launching ? <LoaderCircle className="size-4 animate-spin" /> : audioOnly ? <Mic className="size-4" /> : <Video className="size-4" />}{launching ? "Connecting…" : "I understand — join call"}</button>
           <button type="button" onClick={onClose} className="h-10 rounded-xl border border-[#e9e5ef] px-4 text-[11px] font-bold text-[#665f70]">Cancel</button>
+          {configuration?.joinUrl && <a href={configuration.joinUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center rounded-xl border border-[#dcd4ff] bg-[#f7f5ff] px-4 text-[11px] font-extrabold text-[#5b47bd]">Open in browser</a>}
         </div>
       </div> : <div className="relative min-h-[320px] flex-1 bg-[#17132d] sm:min-h-[480px]">
         <div ref={mountRef} className="absolute inset-0" />

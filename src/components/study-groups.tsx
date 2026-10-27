@@ -282,8 +282,8 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
         setDetail(null);
         await loadGroups();
       } else {
-        const silent = action === "message" || action === "edit_message" || action === "delete_message";
-        setNotice(silent ? "" : "Group updated.");
+        const silent = action === "message" || action === "edit_message" || action === "delete_message" || action === "start_call";
+        setNotice(silent || action === "start_call" ? "" : "Group updated.");
         if (!silent) await loadDetail(selectedId);
       }
       return data;
@@ -398,11 +398,33 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
   }
 
   async function startGroupCall() {
-    const result = await groupAction("start_call") as { session?: GroupSession } | null;
-    if (result?.session) {
-      knownCallSessionIds.current?.add(result.session.id);
-      setCallSession(result.session);
-      setNotice("Starting your group call. Your microphone and camera begin muted.");
+    if (!selectedId) return;
+    setError("");
+    setNotice("Starting group call…");
+    try {
+      const response = await fetch(`/api/study-groups/${selectedId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start_call" }),
+      });
+      const data = await response.json().catch(() => null) as { session?: GroupSession; error?: string } | null;
+      if (!response.ok || !data?.session?.id) {
+        throw new Error(data?.error ?? "The group call could not be started.");
+      }
+      const session = data.session;
+      knownCallSessionIds.current = knownCallSessionIds.current ?? new Set();
+      knownCallSessionIds.current.add(session.id);
+      setDetail((previous) => previous ? {
+        ...previous,
+        sessions: previous.sessions.some((item) => item.id === session.id)
+          ? previous.sessions
+          : [...previous.sessions, session],
+      } : previous);
+      setCallSession(session);
+      setNotice("Group call ready. Your microphone and camera start muted.");
+    } catch (callError) {
+      setNotice("");
+      setError(callError instanceof Error ? callError.message : "The group call could not be started.");
     }
   }
 
