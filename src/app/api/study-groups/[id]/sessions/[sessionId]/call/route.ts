@@ -68,10 +68,14 @@ export async function GET(_request: Request, context: RouteContext) {
   if (groupError) return fail("The group information could not be loaded.", 500);
   if (!group) return fail("Study group not found.", 404);
 
+  const roomId = (data.call_room_id || data.id || "").toString().replaceAll("-", "");
+  if (!roomId) return fail("This call room is not ready yet. Try starting the call again.", 503);
+
   return NextResponse.json({
     provider: "jitsi",
     domain,
-    roomName: `studystation-${data.call_room_id.replaceAll("-", "")}`,
+    roomName: `studystation-${roomId}`,
+    joinUrl: `https://${domain}/studystation-${roomId}`,
     session: {
       id: data.id,
       title: data.title,

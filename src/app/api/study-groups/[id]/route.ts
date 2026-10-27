@@ -87,7 +87,7 @@ export async function GET(request: Request, context: RouteContext) {
   const before = url.searchParams.get("before");
   if (before && Number.isNaN(Date.parse(before))) return fail("The message page cursor is invalid.");
   let messagesQuery = auth.supabase.from("group_messages")
-    .select("id, sender_id, body, created_at")
+    .select("id, sender_id, body, created_at, reply_to_id, edited_at, deleted_at")
     .eq("group_id", id)
     .order("created_at", { ascending: false })
     .limit(51);
@@ -150,13 +150,31 @@ export async function GET(request: Request, context: RouteContext) {
     group,
     role,
     memberCount: count ?? 0,
-    messages: pageMessages.map((message) => ({
-      id: message.id,
-      body: message.body,
-      created_at: message.created_at,
-      isMine: message.sender_id === auth.user.id,
-      senderName: profileById.get(message.sender_id)?.full_name ?? (message.sender_id === auth.user.id ? "You" : "Group member"),
-    })),
+    messages: pageMessages.map((message) => {
+      const deleted = Boolean((message as { deleted_at?: string | null }).deleted_at);
+      const replyToId = (message as { reply_to_id?: string | null }).reply_to_id ?? null;
+      const replySource = replyToId ? pageMessages.find((item) => item.id === replyToId) : null;
+      return {
+        id: message.id,
+        body: deleted ? "" : message.body,
+        created_at: message.created_at,
+        isMine: message.sender_id === auth.user.id,
+        senderName: profileById.get(message.sender_id)?.full_name ?? (message.sender_id === auth.user.id ? "You" : "Group member"),
+        editedAt: (message as { edited_at?: string | null }).edited_at ?? null,
+        deletedAt: (message as { deleted_at?: string | null }).deleted_at ?? null,
+        replyToId,
+        replyPreview: replySource
+          ? {
+              id: replySource.id,
+              body: (replySource as { deleted_at?: string | null }).deleted_at ? "Message deleted" : String(replySource.body).slice(0, 140),
+              senderName: profileById.get(replySource.sender_id)?.full_name ?? "Group member",
+              isMine: replySource.sender_id === auth.user.id,
+            }
+          : null,
+        // Own messages are treated as delivered once persisted (double tick in UI).
+        status: message.sender_id === auth.user.id ? "delivered" : "received",
+      };
+    }),
     hasMoreMessages,
     nextMessageCursor: hasMoreMessages ? pageMessages[0]?.created_at ?? null : null,
     sessions: sessions ?? [],
@@ -317,7 +335,7 @@ export async function POST(request: Request, context: RouteContext) {
         ends_at: endsAt.toISOString(),
         status: "scheduled",
       })
-      .select("id, title, starts_at, ends_at, status, notes")
+      .select("id, title, starts_at, ends_at, status, notes, call_room_id")
       .single();
     if (error || !data) return fail("The group call could not be started. Check that the Stage 10 migration is applied.", 503);
     const { data: members, error: membersError } = await admin.from("group_members")
@@ -339,6 +357,15 @@ export async function POST(request: Request, context: RouteContext) {
   if (action === "message") {
     const message = typeof body.text === "string" ? body.text.trim() : "";
     if (message.length < 1 || message.length > 2000) return fail("Messages must be between 1 and 2,000 characters.");
+    const replyToId = typeof body.replyToId === "string" && body.replyToId.trim() ? body.replyToId.trim() : null;
+    if (replyToId) {
+      const { data: parent, error: parentError } = await admin.from("group_messages")
+        .select("id, group_id, body, sender_id, deleted_at")
+        .eq("id", replyToId)
+        .eq("group_id", id)
+        .maybeSingle();
+      if (parentError || !parent) return fail("The message you are replying to was not found.", 404);
+    }
     const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
     const { count, error: limitError } = await admin.from("group_messages")
       .select("id", { count: "exact", head: true })
@@ -347,15 +374,130 @@ export async function POST(request: Request, context: RouteContext) {
       .gte("created_at", oneMinuteAgo);
     if (limitError) return fail("Message rate limit could not be checked. Please retry.", 503);
     if ((count ?? 0) >= 10) return fail("You have sent 10 messages in the last minute. Please wait before posting again.", 429);
+    const insertPayload: Record<string, unknown> = { group_id: id, sender_id: auth.user.id, body: message };
+    if (replyToId) insertPayload.reply_to_id = replyToId;
     const { data, error } = await admin.from("group_messages")
-      .insert({ group_id: id, sender_id: auth.user.id, body: message })
-      .select("id, sender_id, body, created_at")
+      .insert(insertPayload)
+      .select("id, sender_id, body, created_at, reply_to_id, edited_at, deleted_at")
       .single();
-    if (error || !data) return fail("Your message could not be sent.", 500);
+    if (error || !data) {
+      // Fallback without reply column if migration not applied yet
+      if (replyToId && error) {
+        const retry = await admin.from("group_messages")
+          .insert({ group_id: id, sender_id: auth.user.id, body: message })
+          .select("id, sender_id, body, created_at")
+          .single();
+        if (retry.error || !retry.data) return fail("Your message could not be sent.", 500);
+        return NextResponse.json({
+          message: {
+            id: retry.data.id,
+            body: retry.data.body,
+            created_at: retry.data.created_at,
+            isMine: true,
+            status: "delivered",
+            replyToId: null,
+            replyPreview: null,
+            editedAt: null,
+            deletedAt: null,
+          },
+        }, { status: 201 });
+      }
+      return fail("Your message could not be sent.", 500);
+    }
+    let replyPreview = null as null | { id: string; body: string; senderName: string; isMine: boolean };
+    if (data.reply_to_id) {
+      const { data: parent } = await admin.from("group_messages")
+        .select("id, body, sender_id, deleted_at")
+        .eq("id", data.reply_to_id)
+        .maybeSingle();
+      if (parent) {
+        replyPreview = {
+          id: parent.id,
+          body: parent.deleted_at ? "Message deleted" : String(parent.body).slice(0, 140),
+          senderName: parent.sender_id === auth.user.id ? "You" : "Group member",
+          isMine: parent.sender_id === auth.user.id,
+        };
+      }
+    }
     return NextResponse.json({
-      message: { id: data.id, body: data.body, created_at: data.created_at, isMine: true },
+      message: {
+        id: data.id,
+        body: data.body,
+        created_at: data.created_at,
+        isMine: true,
+        status: "delivered",
+        replyToId: data.reply_to_id ?? null,
+        replyPreview,
+        editedAt: data.edited_at ?? null,
+        deletedAt: data.deleted_at ?? null,
+      },
     }, { status: 201 });
   }
+
+  if (action === "edit_message") {
+    const messageId = typeof body.messageId === "string" ? body.messageId.trim() : "";
+    const nextBody = typeof body.text === "string" ? body.text.trim() : "";
+    if (!messageId) return fail("Choose a message to edit.");
+    if (nextBody.length < 1 || nextBody.length > 2000) return fail("Messages must be between 1 and 2,000 characters.");
+    const { data: existing, error: existingError } = await admin.from("group_messages")
+      .select("id, sender_id, deleted_at")
+      .eq("id", messageId)
+      .eq("group_id", id)
+      .maybeSingle();
+    if (existingError || !existing) return fail("Message not found.", 404);
+    if (existing.sender_id !== auth.user.id) return fail("You can only edit your own messages.", 403);
+    if (existing.deleted_at) return fail("Deleted messages cannot be edited.", 400);
+    const editedAt = new Date().toISOString();
+    const { data, error } = await admin.from("group_messages")
+      .update({ body: nextBody, edited_at: editedAt })
+      .eq("id", messageId)
+      .eq("group_id", id)
+      .select("id, body, created_at, edited_at, deleted_at, reply_to_id")
+      .single();
+    if (error || !data) return fail("The message could not be edited. Apply the latest chat migration if this keeps failing.", 500);
+    return NextResponse.json({
+      message: {
+        id: data.id,
+        body: data.body,
+        created_at: data.created_at,
+        isMine: true,
+        status: "delivered",
+        editedAt: data.edited_at,
+        deletedAt: data.deleted_at,
+        replyToId: data.reply_to_id ?? null,
+      },
+    });
+  }
+
+  if (action === "delete_message") {
+    const messageId = typeof body.messageId === "string" ? body.messageId.trim() : "";
+    if (!messageId) return fail("Choose a message to delete.");
+    const { data: existing, error: existingError } = await admin.from("group_messages")
+      .select("id, sender_id, deleted_at")
+      .eq("id", messageId)
+      .eq("group_id", id)
+      .maybeSingle();
+    if (existingError || !existing) return fail("Message not found.", 404);
+    const canModerate = role === "owner" || role === "moderator";
+    if (existing.sender_id !== auth.user.id && !canModerate) return fail("You can only delete your own messages.", 403);
+    if (existing.deleted_at) return NextResponse.json({ success: true });
+    const deletedAt = new Date().toISOString();
+    const { error } = await admin.from("group_messages")
+      .update({ body: "Message deleted", deleted_at: deletedAt })
+      .eq("id", messageId)
+      .eq("group_id", id);
+    if (error) {
+      // Hard delete fallback if soft-delete column missing
+      const hard = await admin.from("group_messages").delete().eq("id", messageId).eq("group_id", id);
+      if (hard.error) return fail("The message could not be deleted.", 500);
+      return NextResponse.json({ success: true, hardDeleted: true });
+    }
+    return NextResponse.json({
+      success: true,
+      message: { id: messageId, deletedAt, body: "", isMine: existing.sender_id === auth.user.id },
+    });
+  }
+
 
   if (action === "session") {
     const title = typeof body.title === "string" ? body.title.trim() : "";

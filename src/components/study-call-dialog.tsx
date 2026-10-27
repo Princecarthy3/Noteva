@@ -13,6 +13,7 @@ type CallConfiguration = {
   provider: "jitsi";
   domain: string;
   roomName: string;
+  joinUrl?: string;
   session: {
     title: string;
     groupName: string;
@@ -131,46 +132,12 @@ export function StudyCallDialog({
         throw new Error(data?.error ?? "The call could not be authorized.");
       }
       if (!activeRef.current) return;
+      // Prefer server joinUrl, otherwise build one
+      if (!data.joinUrl) {
+        data.joinUrl = `https://${data.domain}/${data.roomName}`;
+      }
       setConfiguration(data);
       setCallState("connecting");
-      await loadJitsiApi(data.domain);
-      if (!activeRef.current || !mountRef.current || !window.JitsiMeetExternalAPI) return;
-
-      const api = new window.JitsiMeetExternalAPI(data.domain, {
-        roomName: data.roomName,
-        parentNode: mountRef.current,
-        width: "100%",
-        height: "100%",
-        configOverwrite: {
-          prejoinPageEnabled: true,
-          startWithAudioMuted: true,
-          startWithVideoMuted: true,
-          disableDeepLinking: true,
-          toolbarButtons: audioOnly
-            ? ["microphone", "hangup", "chat", "tileview", "raisehand"]
-            : ["microphone", "camera", "hangup", "chat", "tileview", "raisehand"],
-        },
-      });
-      apiRef.current = api;
-      const listeners: Array<[string, JitsiListener]> = [
-        ["videoConferenceJoined", () => {
-          if (activeRef.current) setCallState("connected");
-        }],
-        ["videoConferenceLeft", () => {
-          if (activeRef.current) setCallState("left");
-        }],
-        ["readyToClose", () => {
-          if (activeRef.current) setCallState("left");
-        }],
-        ["errorOccurred", (event) => {
-          if (event?.isFatal && activeRef.current) {
-            setError(event.message ?? "The call encountered an error.");
-            setCallState("error");
-          }
-        }],
-      ];
-      listenersRef.current = listeners;
-      listeners.forEach(([name, listener]) => api.addEventListener(name, listener));
     } catch (joinError) {
       if (activeRef.current) {
         setError(joinError instanceof Error ? joinError.message : "The call could not be started.");
@@ -180,6 +147,64 @@ export function StudyCallDialog({
       if (activeRef.current) setLaunching(false);
     }
   }
+
+  // Mount Jitsi only after the video container is in the DOM
+  useEffect(() => {
+    if (!configuration || callState === "left") return;
+    let cancelled = false;
+    async function mount() {
+      try {
+        await loadJitsiApi(configuration!.domain);
+        if (cancelled || !activeRef.current || !mountRef.current || !window.JitsiMeetExternalAPI) return;
+        disposeApi();
+        if (mountRef.current) mountRef.current.replaceChildren();
+        const api = new window.JitsiMeetExternalAPI!(configuration!.domain, {
+          roomName: configuration!.roomName,
+          parentNode: mountRef.current!,
+          width: "100%",
+          height: "100%",
+          configOverwrite: {
+            prejoinPageEnabled: true,
+            startWithAudioMuted: true,
+            startWithVideoMuted: true,
+            disableDeepLinking: true,
+            toolbarButtons: audioOnly
+              ? ["microphone", "hangup", "chat", "tileview", "raisehand"]
+              : ["microphone", "camera", "hangup", "chat", "tileview", "raisehand"],
+          },
+        });
+        apiRef.current = api;
+        const listeners: Array<[string, JitsiListener]> = [
+          ["videoConferenceJoined", () => {
+            if (activeRef.current) setCallState("connected");
+          }],
+          ["videoConferenceLeft", () => {
+            if (activeRef.current) setCallState("left");
+          }],
+          ["readyToClose", () => {
+            if (activeRef.current) setCallState("left");
+          }],
+          ["errorOccurred", (event) => {
+            if (event?.isFatal && activeRef.current) {
+              setError(event.message ?? "The call encountered an error.");
+              setCallState("error");
+            }
+          }],
+        ];
+        listenersRef.current = listeners;
+        listeners.forEach(([name, listener]) => api.addEventListener(name, listener));
+      } catch (mountError) {
+        if (activeRef.current && !cancelled) {
+          setError(mountError instanceof Error ? mountError.message : "The call could not be embedded. Use Open in browser.");
+          setCallState("error");
+        }
+      }
+    }
+    void mount();
+    return () => {
+      cancelled = true;
+    };
+  }, [configuration, audioOnly]);
 
   function reconnect() {
     disposeApi();
@@ -217,13 +242,18 @@ export function StudyCallDialog({
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void joinCall()} disabled={launching} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#7259e8] px-4 text-[11px] font-extrabold text-white disabled:opacity-60">{launching ? <LoaderCircle className="size-4 animate-spin" /> : audioOnly ? <Mic className="size-4" /> : <Video className="size-4" />}{launching ? "Connecting…" : "I understand — join call"}</button>
           <button type="button" onClick={onClose} className="h-10 rounded-xl border border-[#e9e5ef] px-4 text-[11px] font-bold text-[#665f70]">Cancel</button>
+          {configuration?.joinUrl && <a href={configuration.joinUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center rounded-xl border border-[#dcd4ff] bg-[#f7f5ff] px-4 text-[11px] font-extrabold text-[#5b47bd]">Prefer browser tab</a>}
         </div>
       </div> : <div className="relative min-h-[320px] flex-1 bg-[#17132d] sm:min-h-[480px]">
         <div ref={mountRef} className="absolute inset-0" />
         <div className="absolute bottom-3 left-3 rounded-lg bg-[#17132d]/85 px-3 py-2 text-[10px] font-semibold text-white" role="status">
           {callState === "connecting" ? "Connecting… your devices start muted." : callState === "connected" ? "Connected. Enable your microphone or camera only when ready." : callState === "left" ? "You left the call." : callState === "error" ? "The call ended unexpectedly." : "Loading call…"}
         </div>
-        {(callState === "left" || callState === "error") && <div className="absolute inset-0 grid place-items-center bg-[#17132d]/75"><div className="flex gap-2"><button type="button" onClick={reconnect} className="h-9 rounded-lg bg-white px-4 text-[10px] font-extrabold text-[#5140b0]">Reconnect</button><button type="button" onClick={leaveCall} className="h-9 rounded-lg border border-white/50 px-4 text-[10px] font-extrabold text-white">Leave call</button></div></div>}
+        {(callState === "left" || callState === "error") && <div className="absolute inset-0 grid place-items-center bg-[#17132d]/75"><div className="flex flex-wrap justify-center gap-2">
+          <button type="button" onClick={reconnect} className="h-9 rounded-lg bg-white px-4 text-[10px] font-extrabold text-[#5140b0]">Reconnect</button>
+          {configuration?.joinUrl && <a href={configuration.joinUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-lg bg-[#7259e8] px-4 text-[10px] font-extrabold text-white">Open in browser</a>}
+          <button type="button" onClick={leaveCall} className="h-9 rounded-lg border border-white/50 px-4 text-[10px] font-extrabold text-white">Leave call</button>
+        </div></div>}
       </div>}
 
       {joined && <div className="flex items-center justify-between gap-3 border-t border-[#eeeaf2] px-4 py-3 text-[9px] text-[#827b8e]"><span>{configuration?.session.groupName} · Jitsi Meet</span><button type="button" onClick={leaveCall} className="h-8 rounded-lg bg-[#fff1ef] px-3 font-extrabold text-[#a44e48]">Leave call</button></div>}
