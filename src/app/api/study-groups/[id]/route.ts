@@ -358,14 +358,6 @@ export async function POST(request: Request, context: RouteContext) {
     const message = typeof body.text === "string" ? body.text.trim() : "";
     if (message.length < 1 || message.length > 2000) return fail("Messages must be between 1 and 2,000 characters.");
     const replyToId = typeof body.replyToId === "string" && body.replyToId.trim() ? body.replyToId.trim() : null;
-    if (replyToId) {
-      const { data: parent, error: parentError } = await admin.from("group_messages")
-        .select("id, group_id, body, sender_id, deleted_at")
-        .eq("id", replyToId)
-        .eq("group_id", id)
-        .maybeSingle();
-      if (parentError || !parent) return fail("The message you are replying to was not found.", 404);
-    }
     const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
     const { count, error: limitError } = await admin.from("group_messages")
       .select("id", { count: "exact", head: true })
@@ -374,52 +366,42 @@ export async function POST(request: Request, context: RouteContext) {
       .gte("created_at", oneMinuteAgo);
     if (limitError) return fail("Message rate limit could not be checked. Please retry.", 503);
     if ((count ?? 0) >= 10) return fail("You have sent 10 messages in the last minute. Please wait before posting again.", 429);
-    const insertPayload: Record<string, unknown> = { group_id: id, sender_id: auth.user.id, body: message };
-    if (replyToId) insertPayload.reply_to_id = replyToId;
-    const { data, error } = await admin.from("group_messages")
-      .insert(insertPayload)
-      .select("id, sender_id, body, created_at, reply_to_id, edited_at, deleted_at")
-      .single();
-    if (error || !data) {
-      // Fallback without reply column if migration not applied yet
-      if (replyToId && error) {
+
+    const baseInsert = { group_id: id, sender_id: auth.user.id, body: message } as Record<string, unknown>;
+    if (replyToId) baseInsert.reply_to_id = replyToId;
+
+    let inserted: any = null;
+    {
+      const attempt = await admin.from("group_messages").insert(baseInsert).select("*").single();
+      if (!attempt.error && attempt.data) {
+        inserted = attempt.data;
+      } else {
         const retry = await admin.from("group_messages")
           .insert({ group_id: id, sender_id: auth.user.id, body: message })
           .select("id, sender_id, body, created_at")
           .single();
         if (retry.error || !retry.data) return fail("Your message could not be sent.", 500);
-        return NextResponse.json({
-          message: {
-            id: retry.data.id,
-            body: retry.data.body,
-            created_at: retry.data.created_at,
-            isMine: true,
-            status: "delivered",
-            replyToId: null,
-            replyPreview: null,
-            editedAt: null,
-            deletedAt: null,
-          },
-        }, { status: 201 });
+        inserted = retry.data;
       }
-      return fail("Your message could not be sent.", 500);
     }
-    let replyPreview = null as null | { id: string; body: string; senderName: string; isMine: boolean };
-    const inserted = data as { id: string; body: string; created_at: string; reply_to_id?: string | null; edited_at?: string | null; deleted_at?: string | null };
+
+    let replyPreview: { id: string; body: string; senderName: string; isMine: boolean } | null = null;
     if (inserted.reply_to_id) {
       const { data: parent } = await admin.from("group_messages")
         .select("id, body, sender_id, deleted_at")
         .eq("id", inserted.reply_to_id)
         .maybeSingle();
       if (parent) {
+        const parentRow = parent as any;
         replyPreview = {
-          id: parent.id,
-          body: parent.deleted_at ? "Message deleted" : String(parent.body).slice(0, 140),
-          senderName: parent.sender_id === auth.user.id ? "You" : "Group member",
-          isMine: parent.sender_id === auth.user.id,
+          id: parentRow.id,
+          body: parentRow.deleted_at ? "Message deleted" : String(parentRow.body).slice(0, 140),
+          senderName: parentRow.sender_id === auth.user.id ? "You" : "Group member",
+          isMine: parentRow.sender_id === auth.user.id,
         };
       }
     }
+
     return NextResponse.json({
       message: {
         id: inserted.id,
