@@ -93,6 +93,15 @@ export async function GET(request: Request, context: RouteContext) {
     .limit(51);
   if (before) messagesQuery = messagesQuery.lt("created_at", before);
 
+  // Auto-complete any stale instant call sessions older than 30 minutes
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  await admin.from("study_sessions")
+    .update({ status: "completed" })
+    .eq("group_id", id)
+    .eq("status", "scheduled")
+    .in("title", ["Instant group call", "Study Group Call"])
+    .lt("created_at", thirtyMinutesAgo);
+
   const [{ data: messages, error: messagesError }, { data: sessions, error: sessionsError }, { data: resources, error: resourcesError }, { data: ownResources, error: ownResourcesError }, { data: ownNotes, error: ownNotesError }, { data: members, error: membersError }, { count, error: memberCountError }] = await Promise.all([
     messagesQuery,
     auth.supabase.from("study_sessions")

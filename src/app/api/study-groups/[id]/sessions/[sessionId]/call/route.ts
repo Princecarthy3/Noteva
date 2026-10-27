@@ -55,15 +55,8 @@ export async function GET(_request: Request, context: RouteContext) {
   const now = Date.now();
   const endsAt = Date.parse(data.ends_at);
 
-  // If session expired or was marked inactive, automatically reactivate for active study call
-  if (data.status !== "scheduled" || (Number.isFinite(endsAt) && now >= endsAt)) {
-    const newEndsAt = new Date(now + 3 * 60 * 60 * 1000).toISOString();
-    await admin.from("study_sessions").update({
-      status: "scheduled",
-      ends_at: newEndsAt,
-    }).eq("id", sessionId);
-    data.status = "scheduled";
-    data.ends_at = newEndsAt;
+  if (data.status === "completed" || (Number.isFinite(endsAt) && now >= endsAt)) {
+    return fail("This study call has ended.", 410);
   }
 
   const { data: group, error: groupError } = await admin.from("study_groups")

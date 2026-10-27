@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, memo } from "react";
 import Image from "next/image";
 import {
   Mic,
@@ -66,7 +66,8 @@ const ICE_SERVERS: RTCConfiguration = {
   ],
 };
 
-function VideoTile({
+// Memoized VideoTile that never resets srcObject if the stream reference is unchanged
+const VideoTile = memo(function VideoTile({
   stream,
   muted = false,
   mirror = false,
@@ -76,34 +77,28 @@ function VideoTile({
   mirror?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const streamAttachedRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !stream) return;
 
-    // Attach stream to element
-    video.srcObject = stream;
-    video.muted = muted;
-    video.defaultMuted = muted;
+    // Only assign srcObject if stream reference actually changed
+    if (streamAttachedRef.current !== stream) {
+      streamAttachedRef.current = stream;
+      video.srcObject = stream;
+      video.muted = muted;
+      video.defaultMuted = muted;
 
-    const playVideo = async () => {
-      try {
-        await video.play();
-      } catch (err) {
-        // Autoplay may need user gesture on unmuted audio
-        console.warn("Video play interrupted/waiting:", err);
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {});
       }
-    };
-
-    video.onloadedmetadata = () => {
-      void playVideo();
-    };
-
-    void playVideo();
-
-    return () => {
-      if (video) video.onloadedmetadata = null;
-    };
+    } else {
+      if (video.muted !== muted) {
+        video.muted = muted;
+      }
+    }
   }, [stream, muted]);
 
   return (
@@ -112,10 +107,10 @@ function VideoTile({
       autoPlay
       playsInline
       muted={muted}
-      className={`h-full w-full object-cover transition-transform duration-200 ${mirror ? "-scale-x-100" : ""}`}
+      className={`h-full w-full object-cover ${mirror ? "-scale-x-100" : ""}`}
     />
   );
-}
+});
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -156,7 +151,16 @@ export function StudyCallDialog({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
 
-  // References
+  // Persistent references to prevent effect re-triggering
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const isAudioMutedRef = useRef(isAudioMuted);
+  isAudioMutedRef.current = isAudioMuted;
+
+  const isVideoOffRef = useRef(isVideoOff);
+  isVideoOffRef.current = isVideoOff;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(true);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -197,6 +201,7 @@ export function StudyCallDialog({
       const buffer = new Uint8Array(analyser.frequencyBinCount);
       let rafId: number;
       let wasSpeaking = false;
+      let lastSpeakingTime = 0;
 
       const check = () => {
         analyser.getByteFrequencyData(buffer);
@@ -205,10 +210,14 @@ export function StudyCallDialog({
           sum += buffer[i];
         }
         const avg = sum / buffer.length;
-        const speaking = avg > 14;
-        if (speaking !== wasSpeaking) {
-          wasSpeaking = speaking;
-          onSpeaking(speaking);
+        const now = Date.now();
+        if (avg > 16) {
+          lastSpeakingTime = now;
+        }
+        const isSpeaking = (now - lastSpeakingTime) < 350;
+        if (isSpeaking !== wasSpeaking) {
+          wasSpeaking = isSpeaking;
+          onSpeaking(isSpeaking);
         }
         rafId = requestAnimationFrame(check);
       };
@@ -262,10 +271,10 @@ export function StudyCallDialog({
       } catch {
         // ignore
       } finally {
-        onClose();
+        onCloseRef.current();
       }
     },
-    [groupId, session.id, onClose]
+    [groupId, session.id]
   );
 
   // Create peer connection
@@ -356,8 +365,8 @@ export function StudyCallDialog({
               targetId: remotePeerId,
               sdp: pc.localDescription,
               user: callData?.currentUser,
-              audioMuted: isAudioMuted,
-              videoOff: isVideoOff,
+              audioMuted: isAudioMutedRef.current,
+              videoOff: isVideoOffRef.current,
             });
           })
           .catch((err) => console.warn("Error creating offer", err));
@@ -365,7 +374,7 @@ export function StudyCallDialog({
 
       return pc;
     },
-    [sendSignal, callData?.currentUser, isAudioMuted, isVideoOff, attachAudioAnalyser]
+    [sendSignal, callData?.currentUser, attachAudioAnalyser]
   );
 
   const removePeer = useCallback((peerId: string) => {
@@ -388,7 +397,19 @@ export function StudyCallDialog({
     });
   }, []);
 
-  // Initialize Call & Media
+  // Auto end call on tab close/unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      try {
+        const payload = JSON.stringify({ action: "end_call", sessionId: session.id });
+        navigator.sendBeacon(`/api/study-groups/${groupId}`, new Blob([payload], { type: "application/json" }));
+      } catch {}
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [groupId, session.id]);
+
+  // Main Call Initializer - ONLY RUNS ONCE PER SESSION MOUNT
   useEffect(() => {
     activeRef.current = true;
     let localCleanup: (() => void) | null = null;
@@ -410,22 +431,23 @@ export function StudyCallDialog({
         const clientId = `${data.currentUser.id}-${Math.random().toString(36).slice(2, 9)}`;
         clientIdRef.current = clientId;
 
-        // Resilient camera & microphone acquisition
+        // Resilient camera & microphone acquisition with stable constraints
         let stream: MediaStream;
         let hasCamera = false;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true },
             video: {
-              width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: 30, max: 30 },
               facingMode: "user",
             },
           });
           hasCamera = true;
         } catch {
           try {
-            // Fallback: standard camera
+            // Fallback: basic camera
             stream = await navigator.mediaDevices.getUserMedia({
               audio: true,
               video: true,
@@ -433,7 +455,7 @@ export function StudyCallDialog({
             hasCamera = true;
           } catch {
             try {
-              // Fallback: audio-only if webcam in use or denied
+              // Fallback: audio-only if webcam busy or denied
               stream = await navigator.mediaDevices.getUserMedia({
                 audio: true,
                 video: false,
@@ -458,12 +480,12 @@ export function StudyCallDialog({
         setLocalStream(stream);
         setIsVideoOff(!hasCamera);
 
-        // IMMEDIATELY dismiss loading so the user's camera is visible without waiting!
+        // Immediately show the camera view without delay
         setLoading(false);
 
         // Local speaking detector
         localCleanup = attachAudioAnalyser(stream, (speaking) => {
-          setIsLocalSpeaking(speaking && !isAudioMuted);
+          setIsLocalSpeaking(speaking && !isAudioMutedRef.current);
         });
 
         // Setup Supabase Realtime channel for signaling
@@ -588,7 +610,7 @@ export function StudyCallDialog({
           })
           .on("broadcast", { event: "call-ended" }, () => {
             // Call was ended by a participant
-            onClose();
+            onCloseRef.current();
           })
           .on("broadcast", { event: "peer-leave" }, ({ payload }) => {
             if (!payload) return;
@@ -597,14 +619,13 @@ export function StudyCallDialog({
 
         channel.subscribe((status) => {
           if (status === "SUBSCRIBED") {
-            // Announce presence to room
             channel.send({
               type: "broadcast",
               event: "peer-join",
               payload: {
                 senderId: clientIdRef.current,
                 user: data.currentUser,
-                audioMuted: isAudioMuted,
+                audioMuted: isAudioMutedRef.current,
                 videoOff: !hasCamera,
               },
             });
@@ -624,7 +645,7 @@ export function StudyCallDialog({
       activeRef.current = false;
       if (localCleanup) localCleanup();
 
-      // Release media tracks
+      // Release media tracks only on unmount!
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => t.stop());
       }
@@ -644,9 +665,10 @@ export function StudyCallDialog({
         void audioContextRef.current.close();
       }
     };
-  }, [groupId, session.id, attachAudioAnalyser, createPeerConnection, removePeer, sendSignal, isAudioMuted, onClose]);
+    // ONLY depend on groupId and session.id so it never flashes or restarts while talking/muting
+  }, [groupId, session.id]);
 
-  // Toggle Mute
+  // Toggle Mute (strictly track enabling, never stops track)
   const toggleMute = () => {
     if (!localStreamRef.current) return;
     const next = !isAudioMuted;
@@ -654,76 +676,32 @@ export function StudyCallDialog({
       track.enabled = !next;
     });
     setIsAudioMuted(next);
+    isAudioMutedRef.current = next;
     sendSignal("media-state", { audioMuted: next });
   };
 
-  // Toggle Video
-  const toggleVideo = async () => {
+  // Toggle Video (strictly track enabling, never stops track)
+  const toggleVideo = () => {
     if (!localStreamRef.current) return;
     const next = !isVideoOff;
 
-    if (next) {
-      // Turn off video
-      localStreamRef.current.getVideoTracks().forEach((track) => {
-        track.enabled = false;
-      });
-      setIsVideoOff(true);
-      sendSignal("media-state", { videoOff: true });
-    } else {
-      // Turn on video
-      const existingTrack = localStreamRef.current.getVideoTracks()[0];
-      if (existingTrack) {
-        existingTrack.enabled = true;
-        setIsVideoOff(false);
-        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-        sendSignal("media-state", { videoOff: false });
-      } else {
-        // Request camera if we started audio-only
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 },
-              facingMode: "user",
-            },
-          });
-          const newVideoTrack = stream.getVideoTracks()[0];
-          if (newVideoTrack) {
-            localStreamRef.current.addTrack(newVideoTrack);
-            cameraTrackRef.current = newVideoTrack;
-            setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-
-            // Replace on peer connections
-            peerConnectionsRef.current.forEach((pc) => {
-              const videoSender = pc.getSenders().find((s) => s.track?.kind === "video");
-              if (videoSender) {
-                videoSender.replaceTrack(newVideoTrack);
-              } else {
-                pc.addTrack(newVideoTrack, localStreamRef.current!);
-              }
-            });
-
-            setIsVideoOff(false);
-            sendSignal("media-state", { videoOff: false });
-          }
-        } catch (camErr) {
-          console.warn("Could not enable camera", camErr);
-        }
-      }
-    }
+    localStreamRef.current.getVideoTracks().forEach((track) => {
+      track.enabled = !next;
+    });
+    setIsVideoOff(next);
+    isVideoOffRef.current = next;
+    sendSignal("media-state", { videoOff: next });
   };
 
   // Toggle Screen Share
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      // Stop screen sharing
       if (screenTrackRef.current) {
         screenTrackRef.current.stop();
         screenTrackRef.current = null;
       }
       setIsScreenSharing(false);
 
-      // Revert to camera track if active
       const camTrack = cameraTrackRef.current;
       if (camTrack && localStreamRef.current) {
         const currentVideo = localStreamRef.current.getVideoTracks()[0];
@@ -770,7 +748,7 @@ export function StudyCallDialog({
         });
         sendSignal("media-state", { videoOff: false });
       } catch (err) {
-        console.warn("Screen share cancelled or failed", err);
+        console.warn("Screen share cancelled", err);
       }
     }
   };
@@ -800,7 +778,6 @@ export function StudyCallDialog({
   const peerList = Array.from(peers.values());
   const totalCount = 1 + peerList.length;
 
-  // Grid layout class based on participant count
   const gridClass =
     totalCount === 1
       ? "grid-cols-1 grid-rows-1"
@@ -823,7 +800,6 @@ export function StudyCallDialog({
       {/* Top Header */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#120f24]/90 px-4 backdrop-blur-md sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          {/* StudyStation Brand Logo */}
           <Image
             src="/logo.png"
             alt="StudyStation"
@@ -924,18 +900,18 @@ export function StudyCallDialog({
         ) : (
           <div className={`grid h-full w-full gap-2 sm:gap-3 ${gridClass}`}>
             {/* Local Participant Tile */}
-            <div
-              className={`group relative flex h-full min-h-[160px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-[#151226] shadow-xl transition-all ${
-                isLocalSpeaking ? "border-emerald-500 ring-2 ring-emerald-500/40" : "border-white/10"
-              }`}
-            >
-              {localStream && !isVideoOff && localStream.getVideoTracks().some((t) => t.enabled) ? (
-                <VideoTile stream={localStream} mirror={!isScreenSharing} muted={true} />
-              ) : (
+            <div className="relative flex h-full min-h-[160px] w-full items-center justify-center overflow-hidden rounded-2xl bg-[#151226] shadow-xl">
+              {/* Keep VideoTile persistently mounted to prevent GPU decoder resets */}
+              {localStream && (
+                <div className={`h-full w-full ${isVideoOff ? "hidden" : "block"}`}>
+                  <VideoTile stream={localStream} mirror={!isScreenSharing} muted={true} />
+                </div>
+              )}
+              {(!localStream || isVideoOff) && (
                 <div className="flex flex-col items-center gap-2">
                   <div
                     className={`grid size-20 place-items-center rounded-full bg-gradient-to-tr from-[#7259e8] to-[#9d8bf0] text-xl font-black text-white shadow-lg transition-transform ${
-                      isLocalSpeaking ? "scale-105 ring-4 ring-emerald-400" : ""
+                      isLocalSpeaking ? "scale-105" : ""
                     }`}
                   >
                     {callData?.currentUser.name ? getInitials(callData.currentUser.name) : "YOU"}
@@ -943,6 +919,15 @@ export function StudyCallDialog({
                   <span className="text-[11px] font-bold text-white/60">Camera is off</span>
                 </div>
               )}
+
+              {/* Independent Speaking Border Overlay */}
+              <div
+                className={`pointer-events-none absolute inset-0 rounded-2xl border-2 transition-all duration-150 ${
+                  isLocalSpeaking
+                    ? "border-emerald-500 shadow-[inset_0_0_16px_rgba(16,185,129,0.35)]"
+                    : "border-white/10"
+                }`}
+              />
 
               {/* Top Status Indicators */}
               <div className="absolute left-3 top-3 flex items-center gap-1.5">
@@ -990,23 +975,33 @@ export function StudyCallDialog({
               return (
                 <div
                   key={peer.peerId}
-                  className={`group relative flex h-full min-h-[160px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-[#151226] shadow-xl transition-all ${
-                    peer.isSpeaking ? "border-emerald-500 ring-2 ring-emerald-500/40" : "border-white/10"
-                  }`}
+                  className="relative flex h-full min-h-[160px] w-full items-center justify-center overflow-hidden rounded-2xl bg-[#151226] shadow-xl"
                 >
-                  {hasVideo ? (
-                    <VideoTile stream={peer.stream} muted={false} />
-                  ) : (
+                  {peer.stream && (
+                    <div className={`h-full w-full ${hasVideo ? "block" : "hidden"}`}>
+                      <VideoTile stream={peer.stream} muted={false} />
+                    </div>
+                  )}
+                  {!hasVideo && (
                     <div className="flex flex-col items-center gap-2">
                       <div
                         className={`grid size-20 place-items-center rounded-full bg-gradient-to-tr from-[#3b2d6b] to-[#5a43aa] text-xl font-black text-white shadow-lg transition-transform ${
-                          peer.isSpeaking ? "scale-105 ring-4 ring-emerald-400" : ""
+                          peer.isSpeaking ? "scale-105" : ""
                         }`}
                       >
                         {getInitials(peer.name)}
                       </div>
                     </div>
                   )}
+
+                  {/* Independent Speaking Border Overlay */}
+                  <div
+                    className={`pointer-events-none absolute inset-0 rounded-2xl border-2 transition-all duration-150 ${
+                      peer.isSpeaking
+                        ? "border-emerald-500 shadow-[inset_0_0_16px_rgba(16,185,129,0.35)]"
+                        : "border-white/10"
+                    }`}
+                  />
 
                   {/* Remote Name Bar */}
                   <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between rounded-xl bg-black/60 px-3 py-1.5 backdrop-blur-md">
@@ -1062,7 +1057,7 @@ export function StudyCallDialog({
           {/* Camera Button */}
           <button
             type="button"
-            onClick={() => void toggleVideo()}
+            onClick={toggleVideo}
             aria-label={isVideoOff ? "Turn camera on" : "Turn camera off"}
             className={`flex size-11 items-center justify-center rounded-2xl transition-all shadow-lg ${
               isVideoOff
