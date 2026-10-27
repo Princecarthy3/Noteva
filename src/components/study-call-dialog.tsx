@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Image from "next/image";
 import {
   Mic,
   MicOff,
@@ -8,7 +9,6 @@ import {
   VideoOff,
   PhoneOff,
   ScreenShare,
-  Users,
   Copy,
   Check,
   Maximize2,
@@ -18,7 +18,6 @@ import {
   LoaderCircle,
   X,
   AlertCircle,
-  Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -79,10 +78,33 @@ function VideoTile({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream]);
+    const video = videoRef.current;
+    if (!video || !stream) return;
+
+    // Attach stream to element
+    video.srcObject = stream;
+    video.muted = muted;
+    video.defaultMuted = muted;
+
+    const playVideo = async () => {
+      try {
+        await video.play();
+      } catch (err) {
+        // Autoplay may need user gesture on unmuted audio
+        console.warn("Video play interrupted/waiting:", err);
+      }
+    };
+
+    video.onloadedmetadata = () => {
+      void playVideo();
+    };
+
+    void playVideo();
+
+    return () => {
+      if (video) video.onloadedmetadata = null;
+    };
+  }, [stream, muted]);
 
   return (
     <video
@@ -90,7 +112,7 @@ function VideoTile({
       autoPlay
       playsInline
       muted={muted}
-      className={`h-full w-full object-cover transition-transform ${mirror ? "-scale-x-100" : ""}`}
+      className={`h-full w-full object-cover transition-transform duration-200 ${mirror ? "-scale-x-100" : ""}`}
     />
   );
 }
@@ -156,12 +178,14 @@ export function StudyCallDialog({
     return () => clearInterval(timer);
   }, [loading]);
 
-  // Clean-up audio analyser helper
+  // Audio analyser for speaking ring
   const attachAudioAnalyser = useCallback((stream: MediaStream, onSpeaking: (speaking: boolean) => void) => {
     try {
       const audioTrack = stream.getAudioTracks()[0];
       if (!audioTrack) return () => {};
-      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtxClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtxClass) return () => {};
       const ctx = new AudioCtxClass();
       const source = ctx.createMediaStreamSource(stream);
@@ -181,7 +205,7 @@ export function StudyCallDialog({
           sum += buffer[i];
         }
         const avg = sum / buffer.length;
-        const speaking = avg > 15;
+        const speaking = avg > 14;
         if (speaking !== wasSpeaking) {
           wasSpeaking = speaking;
           onSpeaking(speaking);
@@ -216,94 +240,133 @@ export function StudyCallDialog({
     });
   }, []);
 
+  // End or Leave Call Helper
+  const handleExitCall = useCallback(
+    async (endForEveryone = false) => {
+      try {
+        if (channelRef.current) {
+          channelRef.current.send({
+            type: "broadcast",
+            event: endForEveryone ? "call-ended" : "peer-leave",
+            payload: { senderId: clientIdRef.current },
+          });
+        }
+        // If ending for everyone, or if user is alone in the room:
+        if (endForEveryone || peerConnectionsRef.current.size === 0) {
+          await fetch(`/api/study-groups/${groupId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "end_call", sessionId: session.id }),
+          }).catch(() => {});
+        }
+      } catch {
+        // ignore
+      } finally {
+        onClose();
+      }
+    },
+    [groupId, session.id, onClose]
+  );
+
   // Create peer connection
-  const createPeerConnection = useCallback((remotePeerId: string, remoteUser: { id: string; name: string; avatarUrl: string | null }, isInitiator: boolean) => {
-    if (peerConnectionsRef.current.has(remotePeerId)) {
-      return peerConnectionsRef.current.get(remotePeerId)!;
-    }
+  const createPeerConnection = useCallback(
+    (
+      remotePeerId: string,
+      remoteUser: { id: string; name: string; avatarUrl: string | null },
+      isInitiator: boolean
+    ) => {
+      if (peerConnectionsRef.current.has(remotePeerId)) {
+        return peerConnectionsRef.current.get(remotePeerId)!;
+      }
 
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    peerConnectionsRef.current.set(remotePeerId, pc);
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      peerConnectionsRef.current.set(remotePeerId, pc);
 
-    // Add local tracks to peer connection
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current!);
-      });
-    }
-
-    // Handle ICE candidates
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        sendSignal("ice-candidate", {
-          targetId: remotePeerId,
-          candidate: event.candidate.toJSON(),
+      // Add local tracks to peer connection
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => {
+          pc.addTrack(track, localStreamRef.current!);
         });
       }
-    };
 
-    // Handle incoming remote stream tracks
-    const remoteStream = new MediaStream();
-    pc.ontrack = (event) => {
-      event.streams[0]?.getTracks().forEach((t) => {
-        remoteStream.addTrack(t);
-      });
-
-      setPeers((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(remotePeerId);
-        next.set(remotePeerId, {
-          peerId: remotePeerId,
-          userId: remoteUser.id,
-          name: remoteUser.name,
-          avatarUrl: remoteUser.avatarUrl,
-          stream: remoteStream,
-          audioMuted: existing?.audioMuted ?? false,
-          videoOff: existing?.videoOff ?? false,
-          isSpeaking: false,
-        });
-        return next;
-      });
-
-      // Hook up audio analyser for speaking indicator
-      if (!remoteAnalysersRef.current.has(remotePeerId)) {
-        const cleanupAnalyser = attachAudioAnalyser(remoteStream, (speaking) => {
-          setPeers((prev) => {
-            const current = prev.get(remotePeerId);
-            if (!current || current.isSpeaking === speaking) return prev;
-            const updated = new Map(prev);
-            updated.set(remotePeerId, { ...current, isSpeaking: speaking });
-            return updated;
-          });
-        });
-        remoteAnalysersRef.current.set(remotePeerId, cleanupAnalyser);
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed" || pc.connectionState === "closed") {
-        removePeer(remotePeerId);
-      }
-    };
-
-    // If initiator, create and send offer
-    if (isInitiator) {
-      pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-        .then((offer) => pc.setLocalDescription(offer))
-        .then(() => {
-          sendSignal("peer-offer", {
+      // Handle ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          sendSignal("ice-candidate", {
             targetId: remotePeerId,
-            sdp: pc.localDescription,
-            user: callData?.currentUser,
-            audioMuted: isAudioMuted,
-            videoOff: isVideoOff,
+            candidate: event.candidate.toJSON(),
           });
-        })
-        .catch((err) => console.warn("Error creating offer", err));
-    }
+        }
+      };
 
-    return pc;
-  }, [sendSignal, callData?.currentUser, isAudioMuted, isVideoOff, attachAudioAnalyser]);
+      // Handle incoming remote stream tracks
+      const remoteStream = new MediaStream();
+      pc.ontrack = (event) => {
+        event.streams[0]?.getTracks().forEach((t) => {
+          remoteStream.addTrack(t);
+        });
+
+        setPeers((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(remotePeerId);
+          next.set(remotePeerId, {
+            peerId: remotePeerId,
+            userId: remoteUser.id,
+            name: remoteUser.name,
+            avatarUrl: remoteUser.avatarUrl,
+            stream: remoteStream,
+            audioMuted: existing?.audioMuted ?? false,
+            videoOff: existing?.videoOff ?? false,
+            isSpeaking: false,
+          });
+          return next;
+        });
+
+        // Hook up audio analyser for speaking indicator
+        if (!remoteAnalysersRef.current.has(remotePeerId)) {
+          const cleanupAnalyser = attachAudioAnalyser(remoteStream, (speaking) => {
+            setPeers((prev) => {
+              const current = prev.get(remotePeerId);
+              if (!current || current.isSpeaking === speaking) return prev;
+              const updated = new Map(prev);
+              updated.set(remotePeerId, { ...current, isSpeaking: speaking });
+              return updated;
+            });
+          });
+          remoteAnalysersRef.current.set(remotePeerId, cleanupAnalyser);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (
+          pc.connectionState === "disconnected" ||
+          pc.connectionState === "failed" ||
+          pc.connectionState === "closed"
+        ) {
+          removePeer(remotePeerId);
+        }
+      };
+
+      // If initiator, create and send offer
+      if (isInitiator) {
+        pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+          .then((offer) => pc.setLocalDescription(offer))
+          .then(() => {
+            sendSignal("peer-offer", {
+              targetId: remotePeerId,
+              sdp: pc.localDescription,
+              user: callData?.currentUser,
+              audioMuted: isAudioMuted,
+              videoOff: isVideoOff,
+            });
+          })
+          .catch((err) => console.warn("Error creating offer", err));
+      }
+
+      return pc;
+    },
+    [sendSignal, callData?.currentUser, isAudioMuted, isVideoOff, attachAudioAnalyser]
+  );
 
   const removePeer = useCallback((peerId: string) => {
     const pc = peerConnectionsRef.current.get(peerId);
@@ -325,13 +388,12 @@ export function StudyCallDialog({
     });
   }, []);
 
-  // Initialize Call
+  // Initialize Call & Media
   useEffect(() => {
     activeRef.current = true;
     let localCleanup: (() => void) | null = null;
 
     async function init() {
-      setLoading(true);
       setError("");
       try {
         const res = await fetch(`/api/study-groups/${groupId}/sessions/${session.id}/call`, {
@@ -348,25 +410,41 @@ export function StudyCallDialog({
         const clientId = `${data.currentUser.id}-${Math.random().toString(36).slice(2, 9)}`;
         clientIdRef.current = clientId;
 
-        // Acquire local media stream (fallback to audio-only if camera unavailable)
+        // Resilient camera & microphone acquisition
         let stream: MediaStream;
+        let hasCamera = false;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true },
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+            video: {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              facingMode: "user",
+            },
           });
+          hasCamera = true;
         } catch {
           try {
+            // Fallback: standard camera
             stream = await navigator.mediaDevices.getUserMedia({
-              audio: { echoCancellation: true, noiseSuppression: true },
-              video: false,
+              audio: true,
+              video: true,
             });
-            setIsVideoOff(true);
-          } catch (micErr) {
-            console.warn("Could not acquire microphone or camera", micErr);
-            stream = new MediaStream();
-            setIsAudioMuted(true);
-            setIsVideoOff(true);
+            hasCamera = true;
+          } catch {
+            try {
+              // Fallback: audio-only if webcam in use or denied
+              stream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: false,
+              });
+              hasCamera = false;
+            } catch (micErr) {
+              console.warn("Could not acquire microphone or camera", micErr);
+              stream = new MediaStream();
+              hasCamera = false;
+              setIsAudioMuted(true);
+            }
           }
         }
 
@@ -378,6 +456,10 @@ export function StudyCallDialog({
         localStreamRef.current = stream;
         cameraTrackRef.current = stream.getVideoTracks()[0] || null;
         setLocalStream(stream);
+        setIsVideoOff(!hasCamera);
+
+        // IMMEDIATELY dismiss loading so the user's camera is visible without waiting!
+        setLoading(false);
 
         // Local speaking detector
         localCleanup = attachAudioAnalyser(stream, (speaking) => {
@@ -398,8 +480,7 @@ export function StudyCallDialog({
             if (!payload || payload.senderId === clientIdRef.current) return;
             const remotePeerId = payload.senderId as string;
             const remoteUser = payload.user || { id: remotePeerId, name: "Student", avatarUrl: null };
-            
-            // Register peer placeholder
+
             setPeers((prev) => {
               const next = new Map(prev);
               next.set(remotePeerId, {
@@ -415,7 +496,7 @@ export function StudyCallDialog({
               return next;
             });
 
-            // As existing participant, initiate offer to new joiner
+            // As existing participant, send offer to new peer
             createPeerConnection(remotePeerId, remoteUser, true);
           })
           .on("broadcast", { event: "peer-offer" }, async ({ payload }) => {
@@ -431,7 +512,6 @@ export function StudyCallDialog({
             try {
               await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
 
-              // Process pending candidates
               const pending = pendingCandidatesRef.current.get(remotePeerId) || [];
               for (const cand of pending) {
                 try {
@@ -506,6 +586,10 @@ export function StudyCallDialog({
               return next;
             });
           })
+          .on("broadcast", { event: "call-ended" }, () => {
+            // Call was ended by a participant
+            onClose();
+          })
           .on("broadcast", { event: "peer-leave" }, ({ payload }) => {
             if (!payload) return;
             removePeer(payload.senderId as string);
@@ -521,10 +605,9 @@ export function StudyCallDialog({
                 senderId: clientIdRef.current,
                 user: data.currentUser,
                 audioMuted: isAudioMuted,
-                videoOff: isVideoOff,
+                videoOff: !hasCamera,
               },
             });
-            setLoading(false);
           }
         });
       } catch (initErr) {
@@ -541,21 +624,7 @@ export function StudyCallDialog({
       activeRef.current = false;
       if (localCleanup) localCleanup();
 
-      // Announce leave
-      try {
-        if (channelRef.current) {
-          channelRef.current.send({
-            type: "broadcast",
-            event: "peer-leave",
-            payload: { senderId: clientIdRef.current },
-          });
-          channelRef.current.unsubscribe();
-        }
-      } catch {
-        // ignore
-      }
-
-      // Stop local tracks
+      // Release media tracks
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => t.stop());
       }
@@ -575,7 +644,7 @@ export function StudyCallDialog({
         void audioContextRef.current.close();
       }
     };
-  }, [groupId, session.id, attachAudioAnalyser, createPeerConnection, removePeer, sendSignal]);
+  }, [groupId, session.id, attachAudioAnalyser, createPeerConnection, removePeer, sendSignal, isAudioMuted, onClose]);
 
   // Toggle Mute
   const toggleMute = () => {
@@ -606,12 +675,17 @@ export function StudyCallDialog({
       if (existingTrack) {
         existingTrack.enabled = true;
         setIsVideoOff(false);
+        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
         sendSignal("media-state", { videoOff: false });
       } else {
         // Request camera if we started audio-only
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            video: {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              facingMode: "user",
+            },
           });
           const newVideoTrack = stream.getVideoTracks()[0];
           if (newVideoTrack) {
@@ -749,9 +823,15 @@ export function StudyCallDialog({
       {/* Top Header */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#120f24]/90 px-4 backdrop-blur-md sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#7259e8] to-[#5b3fd4] text-white shadow-lg shadow-[#7259e8]/25">
-            <Sparkles className="size-4" />
-          </span>
+          {/* StudyStation Brand Logo */}
+          <Image
+            src="/logo.png"
+            alt="StudyStation"
+            width={36}
+            height={36}
+            priority
+            className="size-9 shrink-0 rounded-xl object-cover shadow-md shadow-black/20"
+          />
           <div className="min-w-0">
             <h1 className="truncate text-xs font-black tracking-tight sm:text-sm">
               {callData?.session.groupName ? `${callData.session.groupName} · ` : ""}
@@ -803,7 +883,7 @@ export function StudyCallDialog({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void handleExitCall(false)}
             aria-label="Close call window"
             className="grid size-8 place-items-center rounded-xl border border-white/10 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white"
           >
@@ -820,20 +900,20 @@ export function StudyCallDialog({
               <span className="grid size-12 place-items-center rounded-2xl bg-[#7259e8]/20 text-[#9f8df5]">
                 <LoaderCircle className="size-6 animate-spin" />
               </span>
-              <h2 className="text-sm font-extrabold text-white">Connecting to study call…</h2>
-              <p className="max-w-xs text-xs text-white/50">Setting up peer-to-peer audio and video stream encryption.</p>
+              <h2 className="text-sm font-extrabold text-white">Starting your camera…</h2>
+              <p className="max-w-xs text-xs text-white/50">Initializing video stream and encrypted audio.</p>
             </div>
           </div>
         ) : error ? (
           <div className="grid h-full place-items-center p-4">
             <div className="max-w-md rounded-2xl border border-red-500/20 bg-red-950/30 p-6 text-center">
               <AlertCircle className="mx-auto size-8 text-red-400" />
-              <h2 className="mt-3 text-sm font-extrabold text-white">Call Connection Notice</h2>
+              <h2 className="mt-3 text-sm font-extrabold text-white">Call Notice</h2>
               <p className="mt-2 text-xs leading-5 text-red-200/80">{error}</p>
               <div className="mt-5 flex justify-center gap-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => void handleExitCall(false)}
                   className="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/15"
                 >
                   Close
@@ -860,6 +940,7 @@ export function StudyCallDialog({
                   >
                     {callData?.currentUser.name ? getInitials(callData.currentUser.name) : "YOU"}
                   </div>
+                  <span className="text-[11px] font-bold text-white/60">Camera is off</span>
                 </div>
               )}
 
@@ -1009,12 +1090,27 @@ export function StudyCallDialog({
           {/* Leave Call Button */}
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void handleExitCall(false)}
             aria-label="Leave call"
-            className="flex h-11 items-center gap-2 rounded-2xl bg-red-600 px-5 text-xs font-black text-white shadow-lg shadow-red-600/30 transition hover:bg-red-700"
+            className="flex h-11 items-center gap-2 rounded-2xl bg-white/10 px-4 text-xs font-bold text-white shadow-lg transition hover:bg-white/20"
           >
             <PhoneOff className="size-4" />
             <span className="hidden sm:inline">Leave call</span>
+          </button>
+
+          {/* End Call for Everyone Button */}
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("End this study call for everyone in the group?")) {
+                void handleExitCall(true);
+              }
+            }}
+            aria-label="End call for everyone"
+            className="flex h-11 items-center gap-2 rounded-2xl bg-red-600 px-4 text-xs font-black text-white shadow-lg shadow-red-600/30 transition hover:bg-red-700"
+          >
+            <PhoneOff className="size-4" />
+            <span className="hidden sm:inline">End call</span>
           </button>
         </div>
       </footer>

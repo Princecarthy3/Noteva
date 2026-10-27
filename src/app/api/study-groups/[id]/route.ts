@@ -197,6 +197,7 @@ export async function POST(request: Request, context: RouteContext) {
     endsAt?: unknown;
     notes?: unknown;
     resourceId?: unknown;
+    sessionId?: unknown;
     messageId?: unknown;
     replyToId?: unknown;
     reason?: unknown;
@@ -307,12 +308,21 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (action === "start_call") {
     const now = new Date();
-    // Check if an active call session already exists for this group
+    const fortyFiveMinutesAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+
+    // Auto-complete stale sessions older than 45 minutes so calls are not always active
+    await admin.from("study_sessions")
+      .update({ status: "completed" })
+      .eq("group_id", id)
+      .eq("status", "scheduled")
+      .lt("created_at", fortyFiveMinutesAgo);
+
+    // Check if a call session was recently started for this group
     const { data: existingSession } = await admin.from("study_sessions")
       .select("id, title, starts_at, ends_at, status, notes, call_room_id")
       .eq("group_id", id)
       .eq("status", "scheduled")
-      .gte("ends_at", now.toISOString())
+      .gte("created_at", fortyFiveMinutesAgo)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -321,7 +331,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!session) {
       const startsAt = now;
-      const endsAt = new Date(startsAt.getTime() + 3 * 60 * 60 * 1000);
+      const endsAt = new Date(startsAt.getTime() + 45 * 60 * 1000);
       const roomId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : randomBytes(16).toString("hex");
       const { data, error } = await admin.from("study_sessions")
         .insert({
@@ -338,12 +348,12 @@ export async function POST(request: Request, context: RouteContext) {
       if (error || !data) return fail("The group call could not be started.", 503);
       session = data;
 
-      // Post in group messages safely so other members immediately see the call in chat
+      // Post Calling Card in group messages so members see the calling card in chat!
       try {
         await admin.from("group_messages").insert({
           group_id: id,
           sender_id: auth.user.id,
-          body: `📞 Started a group study call: "${session.title}". Join in!`,
+          body: `📞 Started a group study call: "${session.title}". Join in! [call:${session.id}]`,
         });
       } catch (msgErr) {
         console.warn("Could not post call announcement to chat:", msgErr);
@@ -364,6 +374,27 @@ export async function POST(request: Request, context: RouteContext) {
       if (notificationError) console.error("Group call notifications failed", { code: notificationError.code });
     }
     return NextResponse.json({ session }, { status: 201 });
+  }
+
+  if (action === "end_call") {
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+    if (sessionId) {
+      await admin.from("study_sessions")
+        .update({ status: "completed", ends_at: new Date().toISOString() })
+        .eq("id", sessionId)
+        .eq("group_id", id);
+
+      try {
+        await admin.from("group_messages").insert({
+          group_id: id,
+          sender_id: auth.user.id,
+          body: `📞 Group study call ended.`,
+        });
+      } catch (msgErr) {
+        console.warn("Could not post call end message:", msgErr);
+      }
+    }
+    return NextResponse.json({ success: true });
   }
 
   if (action === "message") {
