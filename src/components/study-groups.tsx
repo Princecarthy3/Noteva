@@ -292,8 +292,9 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
         setDetail(null);
         await loadGroups();
       } else {
-        setNotice(action === "message" ? "" : "Group updated.");
-        if (action !== "message") await loadDetail(selectedId);
+        const silent = ["message", "edit_message", "delete_message"].includes(action);
+        setNotice(silent ? "" : "Group updated.");
+        if (!silent) await loadDetail(selectedId);
       }
       return data;
     } catch (actionError) {

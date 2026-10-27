@@ -151,16 +151,17 @@ export function StudyCallDialog({
   // Mount Jitsi only after the video container is in the DOM
   useEffect(() => {
     if (!configuration || callState === "left") return;
+    const config = configuration;
     let cancelled = false;
     async function mount() {
       try {
-        await loadJitsiApi(configuration!.domain);
+        await loadJitsiApi(config.domain);
         if (cancelled || !activeRef.current || !mountRef.current || !window.JitsiMeetExternalAPI) return;
         disposeApi();
         if (mountRef.current) mountRef.current.replaceChildren();
-        const api = new window.JitsiMeetExternalAPI!(configuration!.domain, {
-          roomName: configuration!.roomName,
-          parentNode: mountRef.current!,
+        const api = new window.JitsiMeetExternalAPI(config.domain, {
+          roomName: config.roomName,
+          parentNode: mountRef.current,
           width: "100%",
           height: "100%",
           configOverwrite: {

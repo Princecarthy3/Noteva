@@ -87,7 +87,7 @@ export async function GET(request: Request, context: RouteContext) {
   const before = url.searchParams.get("before");
   if (before && Number.isNaN(Date.parse(before))) return fail("The message page cursor is invalid.");
   let messagesQuery = auth.supabase.from("group_messages")
-    .select("id, sender_id, body, created_at, reply_to_id, edited_at, deleted_at")
+    .select("*")
     .eq("group_id", id)
     .order("created_at", { ascending: false })
     .limit(51);
@@ -405,10 +405,11 @@ export async function POST(request: Request, context: RouteContext) {
       return fail("Your message could not be sent.", 500);
     }
     let replyPreview = null as null | { id: string; body: string; senderName: string; isMine: boolean };
-    if (data.reply_to_id) {
+    const inserted = data as { id: string; body: string; created_at: string; reply_to_id?: string | null; edited_at?: string | null; deleted_at?: string | null };
+    if (inserted.reply_to_id) {
       const { data: parent } = await admin.from("group_messages")
         .select("id, body, sender_id, deleted_at")
-        .eq("id", data.reply_to_id)
+        .eq("id", inserted.reply_to_id)
         .maybeSingle();
       if (parent) {
         replyPreview = {
@@ -421,15 +422,15 @@ export async function POST(request: Request, context: RouteContext) {
     }
     return NextResponse.json({
       message: {
-        id: data.id,
-        body: data.body,
-        created_at: data.created_at,
+        id: inserted.id,
+        body: inserted.body,
+        created_at: inserted.created_at,
         isMine: true,
         status: "delivered",
-        replyToId: data.reply_to_id ?? null,
+        replyToId: inserted.reply_to_id ?? null,
         replyPreview,
-        editedAt: data.edited_at ?? null,
-        deletedAt: data.deleted_at ?? null,
+        editedAt: inserted.edited_at ?? null,
+        deletedAt: inserted.deleted_at ?? null,
       },
     }, { status: 201 });
   }
