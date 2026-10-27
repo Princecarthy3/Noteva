@@ -132,10 +132,7 @@ export function StudyCallDialog({
         throw new Error(data?.error ?? "The call could not be authorized.");
       }
       if (!activeRef.current) return;
-      // Prefer server joinUrl, otherwise build one
-      if (!data.joinUrl) {
-        data.joinUrl = `https://${data.domain}/${data.roomName}`;
-      }
+      data.joinUrl = data.joinUrl || `https://${data.domain}/${data.roomName}`;
       setConfiguration(data);
       setCallState("connecting");
     } catch (joinError) {
@@ -148,17 +145,16 @@ export function StudyCallDialog({
     }
   }
 
-  // Mount Jitsi only after the video container is in the DOM
   useEffect(() => {
-    if (!configuration || callState === "left") return;
+    if (!configuration || callState === "left" || callState === "error") return;
     const config = configuration;
     let cancelled = false;
-    async function mount() {
+    void (async () => {
       try {
         await loadJitsiApi(config.domain);
         if (cancelled || !activeRef.current || !mountRef.current || !window.JitsiMeetExternalAPI) return;
         disposeApi();
-        if (mountRef.current) mountRef.current.replaceChildren();
+        mountRef.current.replaceChildren();
         const api = new window.JitsiMeetExternalAPI(config.domain, {
           roomName: config.roomName,
           parentNode: mountRef.current,
@@ -176,15 +172,9 @@ export function StudyCallDialog({
         });
         apiRef.current = api;
         const listeners: Array<[string, JitsiListener]> = [
-          ["videoConferenceJoined", () => {
-            if (activeRef.current) setCallState("connected");
-          }],
-          ["videoConferenceLeft", () => {
-            if (activeRef.current) setCallState("left");
-          }],
-          ["readyToClose", () => {
-            if (activeRef.current) setCallState("left");
-          }],
+          ["videoConferenceJoined", () => { if (activeRef.current) setCallState("connected"); }],
+          ["videoConferenceLeft", () => { if (activeRef.current) setCallState("left"); }],
+          ["readyToClose", () => { if (activeRef.current) setCallState("left"); }],
           ["errorOccurred", (event) => {
             if (event?.isFatal && activeRef.current) {
               setError(event.message ?? "The call encountered an error.");
@@ -200,12 +190,9 @@ export function StudyCallDialog({
           setCallState("error");
         }
       }
-    }
-    void mount();
-    return () => {
-      cancelled = true;
-    };
-  }, [configuration, audioOnly]);
+    })();
+    return () => { cancelled = true; };
+  }, [configuration, audioOnly, callState]);
 
   function reconnect() {
     disposeApi();
@@ -250,11 +237,7 @@ export function StudyCallDialog({
         <div className="absolute bottom-3 left-3 rounded-lg bg-[#17132d]/85 px-3 py-2 text-[10px] font-semibold text-white" role="status">
           {callState === "connecting" ? "Connecting… your devices start muted." : callState === "connected" ? "Connected. Enable your microphone or camera only when ready." : callState === "left" ? "You left the call." : callState === "error" ? "The call ended unexpectedly." : "Loading call…"}
         </div>
-        {(callState === "left" || callState === "error") && <div className="absolute inset-0 grid place-items-center bg-[#17132d]/75"><div className="flex flex-wrap justify-center gap-2">
-          <button type="button" onClick={reconnect} className="h-9 rounded-lg bg-white px-4 text-[10px] font-extrabold text-[#5140b0]">Reconnect</button>
-          {configuration?.joinUrl && <a href={configuration.joinUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-lg bg-[#7259e8] px-4 text-[10px] font-extrabold text-white">Open in browser</a>}
-          <button type="button" onClick={leaveCall} className="h-9 rounded-lg border border-white/50 px-4 text-[10px] font-extrabold text-white">Leave call</button>
-        </div></div>}
+        {(callState === "left" || callState === "error") && <div className="absolute inset-0 grid place-items-center bg-[#17132d]/75"><div className="flex flex-wrap justify-center gap-2"><button type="button" onClick={reconnect} className="h-9 rounded-lg bg-white px-4 text-[10px] font-extrabold text-[#5140b0]">Reconnect</button>{configuration?.joinUrl && <a href={configuration.joinUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-lg bg-[#7259e8] px-4 text-[10px] font-extrabold text-white">Open in browser</a>}<button type="button" onClick={leaveCall} className="h-9 rounded-lg border border-white/50 px-4 text-[10px] font-extrabold text-white">Leave call</button></div></div>}
       </div>}
 
       {joined && <div className="flex items-center justify-between gap-3 border-t border-[#eeeaf2] px-4 py-3 text-[9px] text-[#827b8e]"><span>{configuration?.session.groupName} · Jitsi Meet</span><button type="button" onClick={leaveCall} className="h-8 rounded-lg bg-[#fff1ef] px-3 font-extrabold text-[#a44e48]">Leave call</button></div>}

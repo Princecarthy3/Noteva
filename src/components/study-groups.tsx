@@ -6,7 +6,7 @@ import {
   ArrowLeft,
   CalendarPlus,
   Check,
-    Copy,
+  Copy,
   Globe2,
   Info,
   LoaderCircle,
@@ -100,6 +100,8 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [message, setMessage] = useState("");
+  const [replyTo, setReplyTo] = useState<GroupMessage | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "mine" | "discover">("all");
   const [inviteUrl, setInviteUrl] = useState("");
   const [resourcePreview, setResourcePreview] = useState<ResourcePreview | null>(null);
@@ -291,7 +293,7 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
         setDetail(null);
         await loadGroups();
       } else {
-        const silent = ["message", "edit_message", "delete_message"].includes(action);
+        const silent = action === "message" || action === "edit_message" || action === "delete_message";
         setNotice(silent ? "" : "Group updated.");
         if (!silent) await loadDetail(selectedId);
       }
@@ -330,41 +332,24 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
         setEditingId(null);
         setMessage("");
         setReplyTo(null);
-        setMenuMessageId(null);
       }
       return;
     }
-    const result = await groupAction("message", {
-      text: body,
-      replyToId: replyTo?.id,
-    }) as { message?: GroupMessage } | null;
+    const result = await groupAction("message", { text: body, replyToId: replyTo?.id }) as { message?: GroupMessage } | null;
     if (result?.message) {
-      const nextMessage: GroupMessage = {
-        ...result.message,
-        status: "delivered",
-        replyPreview: result.message.replyPreview ?? (replyTo ? {
-          id: replyTo.id,
-          body: replyTo.deletedAt ? "Message deleted" : replyTo.body.slice(0, 140),
-          senderName: replyTo.senderName ?? (replyTo.isMine ? "You" : "Group member"),
-          isMine: replyTo.isMine,
-        } : null),
-      };
-      setDetail((previous) => previous ? { ...previous, messages: [...previous.messages, nextMessage] } : previous);
+      setDetail((previous) => previous ? { ...previous, messages: [...previous.messages, { ...result.message!, status: "delivered" as const }] } : previous);
       setMessage("");
       setReplyTo(null);
-      setMenuMessageId(null);
     }
   }
 
   async function deleteMessage(messageId: string) {
     if (!window.confirm("Delete this message for everyone in the group?")) return;
-    const result = await groupAction("delete_message", { messageId }) as { success?: boolean; hardDeleted?: boolean; message?: { id: string; deletedAt?: string } } | null;
-    if (!result?.success && !result?.hardDeleted && !result?.message) return;
+    const result = await groupAction("delete_message", { messageId }) as { success?: boolean; hardDeleted?: boolean; message?: { deletedAt?: string } } | null;
+    if (!result) return;
     setDetail((previous) => {
       if (!previous) return previous;
-      if (result.hardDeleted) {
-        return { ...previous, messages: previous.messages.filter((item) => item.id !== messageId) };
-      }
+      if (result.hardDeleted) return { ...previous, messages: previous.messages.filter((item) => item.id !== messageId) };
       return {
         ...previous,
         messages: previous.messages.map((item) => item.id === messageId
@@ -372,7 +357,6 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
           : item),
       };
     });
-    setMenuMessageId(null);
     if (editingId === messageId) {
       setEditingId(null);
       setMessage("");
@@ -383,7 +367,6 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
     if (item.deletedAt) return;
     setReplyTo(item);
     setEditingId(null);
-    setMenuMessageId(null);
   }
 
   function beginEdit(item: GroupMessage) {
@@ -391,7 +374,6 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
     setEditingId(item.id);
     setMessage(item.body);
     setReplyTo(null);
-    setMenuMessageId(null);
   }
 
   async function loadOlderMessages() {
@@ -557,60 +539,9 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
             {detail.role ? <div className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
               <section className="relative flex h-[calc(100dvh-185px)] min-h-[420px] min-w-0 flex-col rounded-2xl border border-[#eeeaf2] p-3 sm:p-4"><div className="flex items-center gap-2"><MessageCircle className="size-4 text-[#7259e8]" /><h3 className="text-xs font-extrabold">Group discussion</h3></div>
                 {detail.hasMoreMessages && <button type="button" onClick={() => void loadOlderMessages()} className="mx-auto mt-3 rounded-lg bg-[#f4f2f7] px-3 py-2 text-[9px] font-extrabold text-[#6d6678]">Load earlier messages</button>}
-                <div className="mt-3 flex-1 space-y-3 overflow-y-auto">{detail.messages.length ? detail.messages.map((item) => <article key={item.id} className={`relative max-w-[92%] rounded-xl p-3 ${item.isMine ? "ml-auto bg-[#f1efff]" : "bg-[#f7f6f9]"}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-[8px] font-extrabold text-[#7259e8]">{item.senderName ?? (item.isMine ? "You" : "Group member")}</span>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <time className="text-[8px] text-[#9a94a3]">{formatDate(item.created_at)}</time>
-                        {item.isMine && !item.deletedAt && (
-                          <span className="inline-flex items-center text-[#7259e8]" aria-label="Delivered">
-                            <Check className="size-3" />
-                            <Check className="-ml-1.5 size-3" />
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {item.replyPreview && (
-                      <button type="button" onClick={() => undefined} className="mt-1.5 w-full rounded-lg border-l-2 border-[#7259e8] bg-white/70 px-2 py-1.5 text-left">
-                        <p className="text-[8px] font-extrabold text-[#7259e8]">{item.replyPreview.senderName}</p>
-                        <p className="mt-0.5 line-clamp-2 text-[9px] leading-4 text-[#6d6678]">{item.replyPreview.body}</p>
-                      </button>
-                    )}
-                    {item.deletedAt ? (
-                      <p className="mt-1 text-[10px] italic leading-4 text-[#9a94a3]">This message was deleted</p>
-                    ) : (
-                      <p className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-4">{item.body}</p>
-                    )}
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      {item.editedAt && !item.deletedAt && <span className="text-[8px] font-semibold text-[#9a94a3]">Edited</span>}
-                      {!item.deletedAt && (
-                        <button type="button" onClick={() => beginReply(item)} className="inline-flex items-center gap-0.5 text-[8px] font-bold text-[#5d47bd]"><Reply className="size-3" /> Reply</button>
-                      )}
-                      {item.isMine && !item.deletedAt && (
-                        <button type="button" onClick={() => beginEdit(item)} className="inline-flex items-center gap-0.5 text-[8px] font-bold text-[#5d47bd]"><Pencil className="size-3" /> Edit</button>
-                      )}
-                      {(item.isMine || detail.role === "owner" || detail.role === "moderator") && !item.deletedAt && (
-                        <button type="button" onClick={() => void deleteMessage(item.id)} className="inline-flex items-center gap-0.5 text-[8px] font-bold text-[#a44e48]"><Trash2 className="size-3" /> Delete</button>
-                      )}
-                      {!item.isMine && !item.deletedAt && (
-                        <button type="button" onClick={() => void reportMessage(item.id)} className="text-[8px] font-bold text-[#a44e48]">Report message</button>
-                      )}
-                    </div>
-                  </article>) : <p className="rounded-xl bg-[#fbfaff] px-3 py-7 text-center text-[10px] text-[#8a8494]">Start the discussion with a question, study tip, or announcement.</p>}</div>
+                <div className="mt-3 flex-1 space-y-3 overflow-y-auto">{detail.messages.length ? detail.messages.map((item) => <article key={item.id} className={`max-w-[92%] rounded-xl p-3 ${item.isMine ? "ml-auto bg-[#f1efff]" : "bg-[#f7f6f9]"}`}><div className="flex items-center justify-between gap-3"><span className="text-[8px] font-extrabold text-[#7259e8]">{item.senderName ?? (item.isMine ? "You" : "Group member")}</span><span className="inline-flex items-center gap-1"><time className="text-[8px] text-[#9a94a3]">{formatDate(item.created_at)}</time>{item.isMine && !item.deletedAt && <span className="inline-flex text-[#7259e8]" aria-label="Delivered"><Check className="size-3" /><Check className="-ml-1.5 size-3" /></span>}</span></div>{item.replyPreview && <div className="mt-1.5 rounded-lg border-l-2 border-[#7259e8] bg-white/70 px-2 py-1.5"><p className="text-[8px] font-extrabold text-[#7259e8]">{item.replyPreview.senderName}</p><p className="mt-0.5 line-clamp-2 text-[9px] leading-4 text-[#6d6678]">{item.replyPreview.body}</p></div>}{item.deletedAt ? <p className="mt-1 text-[10px] italic leading-4 text-[#9a94a3]">This message was deleted</p> : <p className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-4">{item.body}</p>}<div className="mt-1.5 flex flex-wrap gap-2">{item.editedAt && !item.deletedAt && <span className="text-[8px] font-semibold text-[#9a94a3]">Edited</span>}{!item.deletedAt && <button type="button" onClick={() => beginReply(item)} className="inline-flex items-center gap-0.5 text-[8px] font-bold text-[#5d47bd]"><Reply className="size-3" /> Reply</button>}{item.isMine && !item.deletedAt && <button type="button" onClick={() => beginEdit(item)} className="inline-flex items-center gap-0.5 text-[8px] font-bold text-[#5d47bd]"><Pencil className="size-3" /> Edit</button>}{(item.isMine || detail.role === "owner" || detail.role === "moderator") && !item.deletedAt && <button type="button" onClick={() => void deleteMessage(item.id)} className="inline-flex items-center gap-0.5 text-[8px] font-bold text-[#a44e48]"><Trash2 className="size-3" /> Delete</button>}{!item.isMine && !item.deletedAt && <button type="button" onClick={() => void reportMessage(item.id)} className="text-[8px] font-bold text-[#a44e48]">Report message</button>}</div></article>) : <p className="rounded-xl bg-[#fbfaff] px-3 py-7 text-center text-[10px] text-[#8a8494]">Start the discussion with a question, study tip, or announcement.</p>}</div>
                 {showGroupTools && <div className="absolute bottom-[76px] left-3 z-30 w-56 rounded-2xl border border-[#e9e5ef] bg-white p-2 shadow-[0_12px_40px_rgba(35,28,68,.18)]"><button type="button" onClick={() => {setShowGroupTools(false); setShowShareResources(true);}} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[10px] font-bold hover:bg-[#f7f5ff]"><Share2 className="size-4 text-[#7259e8]" /> Share a resource</button>{["owner", "moderator"].includes(detail.role!) && <button type="button" onClick={() => {setShowGroupTools(false); setShowSession(true);}} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[10px] font-bold hover:bg-[#f7f5ff]"><CalendarPlus className="size-4 text-[#7259e8]" /> Schedule a session</button>}</div>}
-                <form onSubmit={sendMessage} className="sticky bottom-0 z-10 mt-3 flex shrink-0 flex-col gap-2 border-t border-[#eeeaf2] bg-white/95 pt-3 pb-1">
-                {(replyTo || editingId) && (
-                  <div className="flex items-start gap-2 rounded-xl border border-[#e6e0f7] bg-[#f7f5ff] px-3 py-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[9px] font-extrabold text-[#7259e8]">{editingId ? "Editing message" : `Replying to ${replyTo?.senderName ?? "message"}`}</p>
-                      <p className="mt-0.5 line-clamp-2 text-[9px] leading-4 text-[#6d6678]">{editingId ? message : (replyTo?.body || "")}</p>
-                    </div>
-                    <button type="button" onClick={() => { setReplyTo(null); setEditingId(null); if (editingId) setMessage(""); }} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#7a7386] hover:bg-white" aria-label="Cancel">
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-                )}
-                <div className="flex gap-2"><input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void uploadGroupFile(event.target.files?.[0])} /><button type="button" onClick={() => setShowGroupTools((value) => !value)} aria-label="More group actions" aria-expanded={showGroupTools} className="grid size-10 shrink-0 place-items-center rounded-full text-[#7259e8] hover:bg-[#f3f0ff]"><Plus className="size-6" /></button><button type="button" disabled={uploadingFile} onClick={() => fileInputRef.current?.click()} aria-label="Attach a file" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#e8e4ed] text-[#7259e8] disabled:opacity-50">{uploadingFile ? <LoaderCircle className="size-4 animate-spin" /> : <Paperclip className="size-4" />}</button><input value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} placeholder={editingId ? "Edit your message…" : replyTo ? "Write a reply…" : "Write a group message…"} className="h-10 min-w-0 flex-1 rounded-xl border border-[#e8e4ed] px-3 text-[10px] outline-none focus:border-[#aa9af0]" /><button disabled={!message.trim()} className="grid size-10 shrink-0 place-items-center rounded-full bg-[#7259e8] text-white disabled:opacity-50" aria-label="Send message"><Send className="size-4" /></button></div></form>
+                <form onSubmit={sendMessage} className="sticky bottom-0 z-10 mt-3 flex shrink-0 flex-col gap-2 border-t border-[#eeeaf2] bg-white/95 pt-3 pb-1">{(replyTo || editingId) && <div className="flex items-start gap-2 rounded-xl border border-[#e6e0f7] bg-[#f7f5ff] px-3 py-2"><div className="min-w-0 flex-1"><p className="text-[9px] font-extrabold text-[#7259e8]">{editingId ? "Editing message" : `Replying to ${replyTo?.senderName ?? "message"}`}</p><p className="mt-0.5 line-clamp-2 text-[9px] leading-4 text-[#6d6678]">{editingId ? message : (replyTo?.body || "")}</p></div><button type="button" onClick={() => { setReplyTo(null); setEditingId(null); if (editingId) setMessage(""); }} className="grid size-7 shrink-0 place-items-center rounded-lg text-[#7a7386]" aria-label="Cancel"><X className="size-3.5" /></button></div>}<div className="flex gap-2"><input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void uploadGroupFile(event.target.files?.[0])} /><button type="button" onClick={() => setShowGroupTools((value) => !value)} aria-label="More group actions" aria-expanded={showGroupTools} className="grid size-10 shrink-0 place-items-center rounded-full text-[#7259e8] hover:bg-[#f3f0ff]"><Plus className="size-6" /></button><button type="button" disabled={uploadingFile} onClick={() => fileInputRef.current?.click()} aria-label="Attach a file" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#e8e4ed] text-[#7259e8] disabled:opacity-50">{uploadingFile ? <LoaderCircle className="size-4 animate-spin" /> : <Paperclip className="size-4" />}</button><input value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} placeholder={editingId ? "Edit your message…" : replyTo ? "Write a reply…" : "Write a group message…"} className="h-10 min-w-0 flex-1 rounded-xl border border-[#e8e4ed] px-3 text-[10px] outline-none focus:border-[#aa9af0]" /><button disabled={!message.trim()} className="grid size-10 shrink-0 place-items-center rounded-full bg-[#7259e8] text-white disabled:opacity-50" aria-label="Send message"><Send className="size-4" /></button></div></form>
               </section>
 
             </div> : <div className="mt-5 rounded-2xl bg-[#fbfaff] px-4 py-9 text-center"><LockKeyhole className="mx-auto size-6 text-[#9c91c2]" /><p className="mt-3 text-sm font-extrabold">Join to view group activity</p><p className="mt-1 text-[10px] leading-4 text-[#8a8494]">Discussions, members, sessions, and shared resources are only shown to group members.</p></div>}
