@@ -13,6 +13,7 @@ type CallConfiguration = {
   provider: "jitsi";
   domain: string;
   roomName: string;
+  joinUrl?: string;
   session: {
     title: string;
     groupName: string;
@@ -131,6 +132,7 @@ export function StudyCallDialog({
         throw new Error(data?.error ?? "The call could not be authorized.");
       }
       if (!activeRef.current) return;
+      data.joinUrl = data.joinUrl || `https://${data.domain}/${data.roomName}`;
       setConfiguration(data);
       setCallState("connecting");
       await loadJitsiApi(data.domain);
@@ -223,7 +225,7 @@ export function StudyCallDialog({
         <div className="absolute bottom-3 left-3 rounded-lg bg-[#17132d]/85 px-3 py-2 text-[10px] font-semibold text-white" role="status">
           {callState === "connecting" ? "Connecting… your devices start muted." : callState === "connected" ? "Connected. Enable your microphone or camera only when ready." : callState === "left" ? "You left the call." : callState === "error" ? "The call ended unexpectedly." : "Loading call…"}
         </div>
-        {(callState === "left" || callState === "error") && <div className="absolute inset-0 grid place-items-center bg-[#17132d]/75"><div className="flex gap-2"><button type="button" onClick={reconnect} className="h-9 rounded-lg bg-white px-4 text-[10px] font-extrabold text-[#5140b0]">Reconnect</button><button type="button" onClick={leaveCall} className="h-9 rounded-lg border border-white/50 px-4 text-[10px] font-extrabold text-white">Leave call</button></div></div>}
+        {(callState === "left" || callState === "error") && <div className="absolute inset-0 grid place-items-center bg-[#17132d]/75"><div className="flex gap-2"><button type="button" onClick={reconnect} className="h-9 rounded-lg bg-white px-4 text-[10px] font-extrabold text-[#5140b0]">Reconnect</button>{configuration?.joinUrl && <a href={configuration.joinUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-lg bg-[#7259e8] px-4 text-[10px] font-extrabold text-white">Open in browser</a>}<button type="button" onClick={leaveCall} className="h-9 rounded-lg border border-white/50 px-4 text-[10px] font-extrabold text-white">Leave call</button></div></div>}
       </div>}
 
       {joined && <div className="flex items-center justify-between gap-3 border-t border-[#eeeaf2] px-4 py-3 text-[9px] text-[#827b8e]"><span>{configuration?.session.groupName} · Jitsi Meet</span><button type="button" onClick={leaveCall} className="h-8 rounded-lg bg-[#fff1ef] px-3 font-extrabold text-[#a44e48]">Leave call</button></div>}
