@@ -6,8 +6,7 @@ import {
   ArrowLeft,
   CalendarPlus,
   Check,
-  CheckCheck,
-  Copy,
+    Copy,
   Globe2,
   Info,
   LoaderCircle,
@@ -564,9 +563,10 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
                       <div className="flex shrink-0 items-center gap-1">
                         <time className="text-[8px] text-[#9a94a3]">{formatDate(item.created_at)}</time>
                         {item.isMine && !item.deletedAt && (
-                          item.status === "delivered" || item.status === "sent" || !item.status
-                            ? <CheckCheck className="size-3 text-[#7259e8]" aria-label="Delivered" />
-                            : <Check className="size-3 text-[#9a94a3]" aria-label="Sent" />
+                          <span className="inline-flex items-center text-[#7259e8]" aria-label="Delivered">
+                            <Check className="size-3" />
+                            <Check className="-ml-1.5 size-3" />
+                          </span>
                         )}
                       </div>
                     </div>
