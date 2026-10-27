@@ -16,8 +16,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { id, sessionId } = await context.params;
   if (!uuidPattern.test(id) || !uuidPattern.test(sessionId)) return fail("Study session not found.", 404);
 
-  const domain = getJitsiDomain();
-  if (!domain) return fail("Study calls are not configured. Set JITSI_MEET_DOMAIN on the server.", 503);
+  const domain = getJitsiDomain() || "meet.jit.si";
 
   let supabase;
   try {
@@ -49,16 +48,22 @@ export async function GET(_request: Request, context: RouteContext) {
     .maybeSingle();
   if (error) {
     console.error("Study call session lookup failed", { code: error.code });
-    return fail("The study call could not be loaded. Apply the Stage 10 migration and try again.", 503);
+    return fail("The study call could not be loaded.", 503);
   }
-  if (!data || data.status !== "scheduled") return fail("This study session has no active call.", 404);
+  if (!data) return fail("This study session was not found.", 404);
 
   const now = Date.now();
-  const startsAt = Date.parse(data.starts_at);
   const endsAt = Date.parse(data.ends_at);
-  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)
-    || now < startsAt - 30 * 60 * 1000 || now >= endsAt) {
-    return fail("Calls open 30 minutes before the scheduled start and close at the session end.", 409);
+
+  // If session expired or was marked inactive, automatically reactivate for active study call
+  if (data.status !== "scheduled" || (Number.isFinite(endsAt) && now >= endsAt)) {
+    const newEndsAt = new Date(now + 3 * 60 * 60 * 1000).toISOString();
+    await admin.from("study_sessions").update({
+      status: "scheduled",
+      ends_at: newEndsAt,
+    }).eq("id", sessionId);
+    data.status = "scheduled";
+    data.ends_at = newEndsAt;
   }
 
   const { data: group, error: groupError } = await admin.from("study_groups")
@@ -68,19 +73,34 @@ export async function GET(_request: Request, context: RouteContext) {
   if (groupError) return fail("The group information could not be loaded.", 500);
   if (!group) return fail("Study group not found.", 404);
 
-  const roomId = (data.call_room_id || data.id || "").toString().replaceAll("-", "");
-  if (!roomId) return fail("This call room is not ready yet. Try starting the call again.", 503);
+  // Fetch current user display name and avatar
+  const { data: profile } = await admin.from("profiles")
+    .select("full_name, avatar_url")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const displayName = profile?.full_name || user.email?.split("@")[0] || "Classmate";
+  const rawRoomId = (data.call_room_id || data.id || "").toString().replaceAll("-", "");
+  const roomName = `studystation-${rawRoomId}`;
+
   return NextResponse.json({
-    provider: "jitsi",
+    provider: "webrtc",
+    roomId: rawRoomId || data.id,
+    roomName,
     domain,
-    roomName: `studystation-${roomId}`,
-    joinUrl: `https://${domain}/studystation-${roomId}`,
+    joinUrl: `https://${domain}/${roomName}`,
     session: {
       id: data.id,
       title: data.title,
       groupName: group.name,
       startsAt: data.starts_at,
       endsAt: data.ends_at,
+    },
+    currentUser: {
+      id: user.id,
+      name: displayName,
+      avatarUrl: profile?.avatar_url || null,
+      email: user.email,
     },
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

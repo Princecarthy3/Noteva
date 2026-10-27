@@ -400,6 +400,13 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
   async function startGroupCall() {
     if (!selectedId) return;
     setError("");
+    // If an active session is already ongoing, join it immediately
+    const existingActive = detail?.sessions.find((s) => s.status === "scheduled" && Date.parse(s.ends_at) > Date.now());
+    if (existingActive) {
+      setCallSession(existingActive);
+      setNotice("");
+      return;
+    }
     setNotice("Starting group call…");
     try {
       const response = await fetch(`/api/study-groups/${selectedId}`, {
@@ -421,7 +428,7 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
           : [...previous.sessions, session],
       } : previous);
       setCallSession(session);
-      setNotice("Group call ready. Your microphone and camera start muted.");
+      setNotice("");
     } catch (callError) {
       setNotice("");
       setError(callError instanceof Error ? callError.message : "The group call could not be started.");
@@ -529,8 +536,33 @@ export function StudyGroups({ courses, inviteToken, initialGroupId, callSessionI
             <div className="sticky top-0 z-20 flex min-w-0 items-center justify-between gap-3 border-b border-[#eeeaf2] bg-white/95 px-4 py-3 backdrop-blur sm:px-6"><div className="flex min-w-0 items-center gap-3"><button type="button" onClick={() => {setSelectedId(""); setDetail(null); setShowGroupInfo(false);}} aria-label="Back to study groups" className="grid size-9 shrink-0 place-items-center rounded-full hover:bg-[#f5f3f8]"><ArrowLeft className="size-5" /></button><button type="button" onClick={() => setShowGroupInfo(true)} className="flex min-w-0 items-center gap-3 text-left"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#eeeaff] text-[#7259e8]"><UsersRound className="size-5" /></span><span className="min-w-0"><b className="block truncate text-[13px]">{detail.group.name}</b><span className="mt-0.5 block truncate text-[9px] text-[#8a8494]">{detail.memberCount ?? detail.members.length} members · Tap for group info</span></span></button></div><button type="button" onClick={() => setShowGroupInfo(true)} aria-label="View group description and info" className="grid size-9 shrink-0 place-items-center rounded-full text-[#7259e8] hover:bg-[#f5f3f8]"><Info className="size-5" /></button></div>
             <div className="px-4 pb-6 pt-3 sm:px-6">
             <div className="flex min-w-0 flex-col justify-between gap-3 border-b border-[#eeeaf2] pb-4 sm:flex-row sm:items-start"><div className="min-w-0"><p className="break-words text-[9px] font-bold capitalize text-[#7259e8]">{detail.group.visibility} group · <button type="button" onClick={() => setShowMembers(true)} className="underline underline-offset-2">{detail.memberCount ?? detail.members.length} members</button> {detail.role ? `· You are ${detail.role}` : ""}</p></div>
-              <div className="flex flex-wrap gap-2">{detail.role ? <><button type="button" onClick={() => void startGroupCall()} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#7259e8] px-2.5 text-[9px] font-extrabold text-white"><Phone className="size-3" /> Call</button>{["owner", "moderator"].includes(detail.role) && <><button type="button" onClick={() => void groupAction("create_invite")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold"><Copy className="size-3" /> Invite</button><button type="button" onClick={() => {if (window.confirm("Revoke every active invitation to this group?")) void groupAction("revoke_invites");}} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold">Revoke invites</button></>}<button type="button" onClick={() => void reportMessage()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold"><ShieldAlert className="size-3" /> Report</button>{detail.role !== "owner" ? <button type="button" onClick={() => void groupAction("leave")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#f0d7d4] px-2.5 text-[9px] font-extrabold text-[#a44e48]">Leave</button> : <button type="button" onClick={() => {if (window.confirm("Delete this group and all its discussions, sessions, and invitations? Shared resources will become private again.")) void groupAction("delete_group");}} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#f0d7d4] px-2.5 text-[9px] font-extrabold text-[#a44e48]">Delete group</button>}</> : detail.group.visibility === "public" ? <button type="button" onClick={() => void joinPublic({ ...detail.group, role: null })} className="h-8 rounded-lg bg-[#7259e8] px-3 text-[9px] font-extrabold text-white">Join group</button> : <span className="rounded-lg bg-[#f5f3f8] px-3 py-2 text-[9px] font-bold text-[#8a8494]">Invite required</span>}</div>
+              <div className="flex flex-wrap gap-2">{detail.role ? <>{(() => {
+                const activeCall = detail.sessions.find((s) => s.status === "scheduled" && Date.parse(s.ends_at) > Date.now());
+                return <button type="button" onClick={() => void startGroupCall()} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[9px] font-extrabold text-white transition ${activeCall ? "bg-emerald-600 hover:bg-emerald-700 animate-pulse shadow-md shadow-emerald-500/25" : "bg-[#7259e8] hover:bg-[#6247df]"}`}><Phone className="size-3" /> {activeCall ? "Join Live Call" : "Call"}</button>;
+              })()}{["owner", "moderator"].includes(detail.role) && <><button type="button" onClick={() => void groupAction("create_invite")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold"><Copy className="size-3" /> Invite</button><button type="button" onClick={() => {if (window.confirm("Revoke every active invitation to this group?")) void groupAction("revoke_invites");}} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold">Revoke invites</button></>}<button type="button" onClick={() => void reportMessage()} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#e8e3f0] px-2.5 text-[9px] font-extrabold"><ShieldAlert className="size-3" /> Report</button>{detail.role !== "owner" ? <button type="button" onClick={() => void groupAction("leave")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#f0d7d4] px-2.5 text-[9px] font-extrabold text-[#a44e48]">Leave</button> : <button type="button" onClick={() => {if (window.confirm("Delete this group and all its discussions, sessions, and invitations? Shared resources will become private again.")) void groupAction("delete_group");}} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#f0d7d4] px-2.5 text-[9px] font-extrabold text-[#a44e48]">Delete group</button>}</> : detail.group.visibility === "public" ? <button type="button" onClick={() => void joinPublic({ ...detail.group, role: null })} className="h-8 rounded-lg bg-[#7259e8] px-3 text-[9px] font-extrabold text-white">Join group</button> : <span className="rounded-lg bg-[#f5f3f8] px-3 py-2 text-[9px] font-bold text-[#8a8494]">Invite required</span>}</div>
             </div>
+
+            {(() => {
+              const activeCall = detail.sessions.find((s) => s.status === "scheduled" && Date.parse(s.ends_at) > Date.now());
+              if (!activeCall) return null;
+              return (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-50/90 p-3 shadow-sm">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="relative flex size-2.5 shrink-0">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex size-2.5 rounded-full bg-emerald-500" />
+                    </span>
+                    <div className="min-w-0 truncate">
+                      <p className="truncate text-[10px] font-extrabold text-emerald-950">Active Study Call: {activeCall.title}</p>
+                      <p className="text-[9px] text-emerald-800/80">Group members are on a call right now.</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setCallSession(activeCall)} className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-[9px] font-extrabold text-white shadow transition hover:bg-emerald-700">
+                    <Phone className="size-3" /> Join Call
+                  </button>
+                </div>
+              );
+            })()}
 
             {inviteUrl && <div className="mt-3 flex flex-col gap-2 rounded-xl bg-[#f7f5ff] p-3 sm:flex-row"><p className="min-w-0 flex-1 break-all text-[9px] leading-4 text-[#655d74]">{inviteUrl}</p><button type="button" onClick={() => void copyInvite()} className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white px-3 text-[9px] font-extrabold text-[#5d47bd]"><Copy className="size-3" /> Copy link</button></div>}
 

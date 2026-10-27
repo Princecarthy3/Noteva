@@ -171,7 +171,7 @@ export async function GET(request: Request, context: RouteContext) {
       ...(ownResources ?? []).map((resource) => ({ ...resource, source: "resource" })),
       ...(ownNotes ?? []).map((note) => ({ id: `note:${note.id}`, title: note.title, resource_type: "Generated notes", source: "note" })),
     ],
-    callEnabled: Boolean(getJitsiDomain()),
+    callEnabled: true,
     members: (members ?? []).map((member) => ({
       userId: member.user_id,
       name: profileById.get(member.user_id)?.full_name ?? "StudyStation member",
@@ -306,21 +306,50 @@ export async function POST(request: Request, context: RouteContext) {
   if (!role) return fail("Join the group before using its discussions or shared resources.", 403);
 
   if (action === "start_call") {
-    if (!getJitsiDomain()) return fail("Study calls are not configured. Set JITSI_MEET_DOMAIN on the server.", 503);
-    const startsAt = new Date();
-    const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
-    const { data, error } = await admin.from("study_sessions")
-      .insert({
-        group_id: id,
-        creator_id: auth.user.id,
-        title: "Instant group call",
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        status: "scheduled",
-      })
+    const now = new Date();
+    // Check if an active call session already exists for this group
+    const { data: existingSession } = await admin.from("study_sessions")
       .select("id, title, starts_at, ends_at, status, notes, call_room_id")
-      .single();
-    if (error || !data) return fail("The group call could not be started. Check that the Stage 10 migration is applied.", 503);
+      .eq("group_id", id)
+      .eq("status", "scheduled")
+      .gte("ends_at", now.toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let session = existingSession;
+
+    if (!session) {
+      const startsAt = now;
+      const endsAt = new Date(startsAt.getTime() + 3 * 60 * 60 * 1000);
+      const roomId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : randomBytes(16).toString("hex");
+      const { data, error } = await admin.from("study_sessions")
+        .insert({
+          group_id: id,
+          creator_id: auth.user.id,
+          title: "Study Group Call",
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          status: "scheduled",
+          call_room_id: roomId,
+        })
+        .select("id, title, starts_at, ends_at, status, notes, call_room_id")
+        .single();
+      if (error || !data) return fail("The group call could not be started.", 503);
+      session = data;
+
+      // Post in group messages safely so other members immediately see the call in chat
+      try {
+        await admin.from("group_messages").insert({
+          group_id: id,
+          sender_id: auth.user.id,
+          body: `📞 Started a group study call: "${session.title}". Join in!`,
+        });
+      } catch (msgErr) {
+        console.warn("Could not post call announcement to chat:", msgErr);
+      }
+    }
+
     const { data: members, error: membersError } = await admin.from("group_members")
       .select("user_id")
       .eq("group_id", id)
@@ -330,11 +359,11 @@ export async function POST(request: Request, context: RouteContext) {
         user_id: member.user_id,
         type: "study_group_call",
         title: "Group call started",
-        body: `${group.name} has started a group call. [call:${id}:${data.id}]`,
+        body: `${group.name} has started a group call. [call:${id}:${session.id}]`,
       })));
       if (notificationError) console.error("Group call notifications failed", { code: notificationError.code });
     }
-    return NextResponse.json({ session: data }, { status: 201 });
+    return NextResponse.json({ session }, { status: 201 });
   }
 
   if (action === "message") {
