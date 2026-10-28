@@ -6,9 +6,9 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, GraduationCap, LoaderCircle,
 import Image from "next/image";
 import { saveOnboarding } from "@/app/onboarding/actions";
 import type { AuthActionState } from "@/app/auth/actions";
-import { landingUniversities } from "@/lib/universities";
+import { landingUniversities, universityDivisions } from "@/lib/universities";
 
-type UniversityOption = { id: string; name: string; country_code: string };
+type UniversityOption = { id: string; name: string; country_code: string; division?: string };
 type CourseDraft = { code: string; title: string };
 type ProfileDraft = {
   fullName: string;
@@ -53,25 +53,79 @@ export function OnboardingWizard({
   const [step, setStep] = useState(Math.min(Math.max(initialStep, 0), 2));
   const [courses, setCourses] = useState<CourseDraft[]>(initialCourses.length ? initialCourses : [{ code: "", title: "" }]);
   const [university, setUniversity] = useState(initialProfile.university);
+  const [selectedUniversity, setSelectedUniversity] = useState(initialProfile.university);
   const [universityId, setUniversityId] = useState(initialProfile.universityId);
   const [universityOpen, setUniversityOpen] = useState(false);
   const [searchedUniversities, setSearchedUniversities] = useState<UniversityOption[]>([]);
   const [searchedQuery, setSearchedQuery] = useState("");
   const [universitySearchError, setUniversitySearchError] = useState("");
-  const universitySearching = university.trim().length >= 2 && searchedQuery !== university.trim();
+
+  const isFiltering = university.trim().length > 0 && university.trim().toLocaleLowerCase() !== selectedUniversity.trim().toLocaleLowerCase();
+  const filterQuery = isFiltering ? university.trim().toLocaleLowerCase() : "";
+  const universitySearching = isFiltering && university.trim().length >= 2 && searchedQuery !== university.trim();
+
   const universityOptions = useMemo(() => {
     const options = new Map<string, UniversityOption>();
     searchedUniversities.forEach((item) => options.set(item.name.trim().toLocaleLowerCase(), item));
     universities.forEach((item) => options.set(item.name.trim().toLocaleLowerCase(), item));
     landingUniversities.forEach((item) => {
       const key = item.name.trim().toLocaleLowerCase();
-      if (!options.has(key)) options.set(key, { id: "", name: item.name, country_code: "GH" });
+      if (!options.has(key)) options.set(key, { id: "", name: item.name, country_code: "GH", division: item.division });
     });
     return [...options.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [searchedUniversities, universities]);
+
+  const groupedUniversities = useMemo(() => {
+    const query = filterQuery;
+    const idMap = new Map<string, string>();
+    searchedUniversities.forEach((item) => idMap.set(item.name.trim().toLocaleLowerCase(), item.id));
+    universities.forEach((item) => idMap.set(item.name.trim().toLocaleLowerCase(), item.id));
+
+    const result: { division: string; items: { id: string; name: string }[] }[] = [];
+
+    universityDivisions.forEach((group) => {
+      const matching = group.universities.filter((item) => !query || item.name.toLocaleLowerCase().includes(query));
+      if (matching.length > 0) {
+        result.push({
+          division: group.division,
+          items: matching.map((item) => ({
+            id: idMap.get(item.name.trim().toLocaleLowerCase()) ?? "",
+            name: item.name,
+          })),
+        });
+      }
+    });
+
+    if (query) {
+      const knownNames = new Set<string>();
+      universityDivisions.forEach((group) => group.universities.forEach((item) => knownNames.add(item.name.trim().toLocaleLowerCase())));
+
+      const extraItems: { id: string; name: string }[] = [];
+      [...searchedUniversities, ...universities].forEach((item) => {
+        const key = item.name.trim().toLocaleLowerCase();
+        if (!knownNames.has(key) && key.includes(query) && !extraItems.some((e) => e.name.toLocaleLowerCase() === key)) {
+          extraItems.push({ id: item.id, name: item.name });
+        }
+      });
+
+      if (extraItems.length > 0) {
+        result.push({
+          division: "Other universities",
+          items: extraItems,
+        });
+      }
+    }
+
+    return result;
+  }, [filterQuery, searchedUniversities, universities]);
+
+  const totalVisible = useMemo(() => {
+    return groupedUniversities.reduce((acc, g) => acc + g.items.length, 0);
+  }, [groupedUniversities]);
+
   useEffect(() => {
     const query = university.trim();
-    if (query.length < 2) return;
+    if (!isFiltering || query.length < 2) return;
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => {
@@ -94,13 +148,8 @@ export function OnboardingWizard({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [university]);
-  const visibleUniversities = useMemo(() => {
-    const query = university.trim().toLocaleLowerCase();
-    return universityOptions
-      .filter((item) => !query || item.name.toLocaleLowerCase().includes(query))
-      .slice(0, 12);
-  }, [university, universityOptions]);
+  }, [isFiltering, university]);
+
   const submitAction = async (previousState: AuthActionState, formData: FormData) => {
     const result = await saveOnboarding(previousState, formData);
     if (result.nextStep !== undefined) setStep(result.nextStep);
@@ -144,7 +193,7 @@ export function OnboardingWizard({
                     className="relative mt-2"
                     onBlur={(event) => {
                       if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
-                        window.setTimeout(() => setUniversityOpen(false), 120);
+                        window.setTimeout(() => setUniversityOpen(false), 150);
                       }
                     }}
                   >
@@ -162,16 +211,18 @@ export function OnboardingWizard({
                         setUniversityOpen(true);
                       }}
                       onFocus={() => setUniversityOpen(true)}
+                      onClick={() => setUniversityOpen(true)}
                       onKeyDown={(event) => {
                         if (event.key === "Escape") setUniversityOpen(false);
-                        if (event.key === "ArrowDown" && visibleUniversities.length > 0) {
+                        if (event.key === "ArrowDown" && totalVisible > 0) {
                           event.preventDefault();
+                          setUniversityOpen(true);
                           event.currentTarget.parentElement?.querySelector<HTMLButtonElement>('[role="option"] button')?.focus();
                         }
                       }}
                       role="combobox"
                       aria-autocomplete="list"
-                      aria-expanded={universityOpen && (visibleUniversities.length > 0 || university.trim().length >= 2)}
+                      aria-expanded={universityOpen && (totalVisible > 0 || isFiltering)}
                       aria-controls="university-suggestions"
                       autoComplete="off"
                       maxLength={160}
@@ -179,25 +230,84 @@ export function OnboardingWizard({
                       className="h-12 w-full rounded-xl border border-[#e5e1ec] bg-white px-3.5 pr-10 text-sm outline-none focus:border-[#a99aec]"
                     />
                     <input type="hidden" name="universityId" value={universityId} />
-                    <ChevronDown aria-hidden="true" className={`pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#8b8593] transition-transform ${universityOpen ? "rotate-180" : ""}`} />
-                    {universityOpen && (visibleUniversities.length > 0 || universitySearching || universitySearchError || university.trim().length >= 2) && (
-                      <ul id="university-suggestions" role="listbox" className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-[#e5e1ec] bg-white p-1.5 shadow-[0_16px_40px_rgba(41,31,77,.14)]">
-                        {universitySearching && <li role="presentation" className="px-3 py-2.5 text-xs font-medium text-[#8c8795]">Searching universities…</li>}
-                        {!universitySearching && universitySearchError && <li role="presentation" className="px-3 py-2.5 text-xs font-medium text-[#a44e48]">{universitySearchError}</li>}
-                        {!universitySearching && !universitySearchError && visibleUniversities.length === 0 && university.trim().length >= 2 && <li role="presentation" className="px-3 py-2.5 text-xs font-medium text-[#8c8795]">No matches. You can keep your university name as typed.</li>}
-                        {visibleUniversities.map((item) => (
-                          <li key={item.id || item.name} role="option" aria-selected={university.trim().toLocaleLowerCase() === item.name.toLocaleLowerCase()}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setUniversity(item.name);
-                                setUniversityId(item.id);
-                                setUniversityOpen(false);
-                              }}
-                              className="w-full rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#343047] hover:bg-[#f4f1ff] focus:bg-[#f4f1ff] focus:outline-none"
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={universityOpen ? "Close university menu" : "Open university menu"}
+                      onClick={() => setUniversityOpen((prev) => !prev)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-[#8b8593] hover:text-[#504a5d] focus:outline-none"
+                    >
+                      <ChevronDown aria-hidden="true" className={`size-4 transition-transform duration-200 ${universityOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {universityOpen && (totalVisible > 0 || universitySearching || universitySearchError || isFiltering) && (
+                      <ul
+                        id="university-suggestions"
+                        role="listbox"
+                        className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-[#e5e1ec] bg-white p-1.5 shadow-[0_16px_40px_rgba(41,31,77,.14)]"
+                      >
+                        {universitySearching && <li role="presentation" className="px-3 py-2 text-xs font-medium text-[#8c8795]">Searching universities…</li>}
+                        {!universitySearching && universitySearchError && <li role="presentation" className="px-3 py-2 text-xs font-medium text-[#a44e48]">{universitySearchError}</li>}
+                        {!universitySearching && !universitySearchError && totalVisible === 0 && isFiltering && (
+                          <li role="presentation" className="px-3 py-2.5 text-xs font-medium text-[#8c8795]">No matches. You can keep your university name as typed.</li>
+                        )}
+                        {groupedUniversities.map((group) => (
+                          <li key={group.division} role="group" aria-label={group.division} className="mb-2 last:mb-0">
+                            <div
+                              role="presentation"
+                              aria-hidden="true"
+                              className="sticky top-0 z-10 select-none rounded-md bg-[#f8f6fd] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#7259e8] border-y border-[#ede9fe] pointer-events-none"
                             >
-                              {item.name}
-                            </button>
+                              {group.division}
+                            </div>
+                            <ul role="presentation" className="mt-1 space-y-0.5">
+                              {group.items.map((item) => {
+                                const isSelected = university.trim().toLocaleLowerCase() === item.name.toLocaleLowerCase();
+                                return (
+                                  <li key={item.id || item.name} role="option" aria-selected={isSelected}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setUniversity(item.name);
+                                        setSelectedUniversity(item.name);
+                                        setUniversityId(item.id);
+                                        setUniversityOpen(false);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "ArrowDown") {
+                                          e.preventDefault();
+                                          const allButtons = Array.from(e.currentTarget.closest('[role="listbox"]')?.querySelectorAll<HTMLButtonElement>('[role="option"] button') ?? []);
+                                          const idx = allButtons.indexOf(e.currentTarget);
+                                          if (idx !== -1 && idx < allButtons.length - 1) {
+                                            allButtons[idx + 1].focus();
+                                          }
+                                        } else if (e.key === "ArrowUp") {
+                                          e.preventDefault();
+                                          const allButtons = Array.from(e.currentTarget.closest('[role="listbox"]')?.querySelectorAll<HTMLButtonElement>('[role="option"] button') ?? []);
+                                          const idx = allButtons.indexOf(e.currentTarget);
+                                          if (idx > 0) {
+                                            allButtons[idx - 1].focus();
+                                          } else {
+                                            document.getElementById("university-name")?.focus();
+                                          }
+                                        } else if (e.key === "Escape") {
+                                          e.preventDefault();
+                                          setUniversityOpen(false);
+                                          document.getElementById("university-name")?.focus();
+                                        }
+                                      }}
+                                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                                        isSelected
+                                          ? "bg-[#eeeaff] text-[#6344d4]"
+                                          : "text-[#343047] hover:bg-[#f4f1ff] focus:bg-[#f4f1ff]"
+                                      } focus:outline-none`}
+                                    >
+                                      <span className="truncate">{item.name}</span>
+                                      {isSelected && <Check className="size-3.5 shrink-0 text-[#6344d4]" />}
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
                           </li>
                         ))}
                       </ul>

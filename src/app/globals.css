@@ -366,7 +366,7 @@ select:focus-visible {
 
 /* Ghanaian university marquee */
 .university-marquee {
-  animation: university-scroll 45s linear infinite;
+  animation: university-scroll 140s linear infinite;
   will-change: transform;
 }
 
@@ -405,47 +405,6 @@ select:focus-visible {
 }
 
 /* Respect reduced-motion preferences */
-@media (prefers-reduced-motion: reduce) {
-  .university-marquee {
-    animation: none;
-  }
-}
-
-
-.university-marquee {
-  animation: university-scroll 60s linear infinite;
-  will-change: transform;
-}
-
-.university-name {
-  white-space: nowrap;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 13px;
-  font-weight: 900;
-  color: #a6a0b3;
-  letter-spacing: -0.04em;
-}
-
-.university-star {
-  flex-shrink: 0;
-  color: #b9a5ed;
-  font-size: 17px;
-}
-
-@keyframes university-scroll {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.university-marquee:hover {
-  animation-play-state: paused;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .university-marquee {
     animation: none;
