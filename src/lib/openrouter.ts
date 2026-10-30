@@ -34,7 +34,7 @@ export async function openRouterChat(messages: Message[], options?: { model?: st
       model: options?.model ?? process.env.OPENROUTER_MODEL ?? "google/gemini-2.5-flash",
       messages,
       temperature: options?.temperature ?? 0.25,
-      max_tokens: options?.maxTokens ?? 2200,
+      max_tokens: options?.maxTokens ?? (process.env.OPENROUTER_MAX_TOKENS ? Number(process.env.OPENROUTER_MAX_TOKENS) : 900),
     }),
     signal: AbortSignal.timeout(120_000),
   });

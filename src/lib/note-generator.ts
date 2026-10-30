@@ -1,4 +1,5 @@
 import { hasOpenRouterKey, openRouterChat, parseJsonObject } from "@/lib/openrouter";
+import { hasGeminiKey, getGeminiStudyModel } from "@/lib/gemini";
 
 export type OrganizedKeyTerm = {
   term: string;
@@ -149,7 +150,7 @@ async function callGeminiForNotes(prompt: string): Promise<OrganizedNoteContent>
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
 
-  const model = process.env.GEMINI_STUDY_MODEL?.trim() || process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+  const model = getGeminiStudyModel();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
@@ -246,7 +247,28 @@ ${courseTitle ? `COURSE: "${courseTitle}"` : ""}
 LECTURE TRANSCRIPT:
 ${clippedTranscript}`;
 
-  // 1. Try OpenRouter if configured
+  // 1. Try Gemini API directly if configured (recommended: fast, generous tokens)
+  if (hasGeminiKey()) {
+    try {
+      const combinedPrompt = `${systemInstructions}\n\n${userPrompt}`;
+      const parsed = await callGeminiForNotes(combinedPrompt);
+      if (parsed.summary && Array.isArray(parsed.sections) && parsed.sections.length > 0) {
+        return {
+          title: parsed.title || `${title} — Study Notes`,
+          summary: parsed.summary,
+          keyTerms: Array.isArray(parsed.keyTerms) ? parsed.keyTerms : [],
+          sections: parsed.sections,
+          takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
+          studyQuestions: Array.isArray(parsed.studyQuestions) ? parsed.studyQuestions : [],
+          actionChecklist: Array.isArray(parsed.actionChecklist) ? parsed.actionChecklist : [],
+        };
+      }
+    } catch (geminiErr) {
+      console.warn("Gemini note generation failed, trying fallback:", geminiErr);
+    }
+  }
+
+  // 2. Try OpenRouter if configured
   if (hasOpenRouterKey()) {
     try {
       const model = process.env.OPENROUTER_STUDY_MODEL ?? process.env.OPENROUTER_MODEL ?? "google/gemini-2.5-flash";
@@ -270,28 +292,7 @@ ${clippedTranscript}`;
         };
       }
     } catch (openRouterErr) {
-      console.warn("OpenRouter note generation failed, trying fallback:", openRouterErr);
-    }
-  }
-
-  // 2. Try Gemini API directly if configured
-  if (process.env.GEMINI_API_KEY?.trim()) {
-    try {
-      const combinedPrompt = `${systemInstructions}\n\n${userPrompt}`;
-      const parsed = await callGeminiForNotes(combinedPrompt);
-      if (parsed.summary && Array.isArray(parsed.sections) && parsed.sections.length > 0) {
-        return {
-          title: parsed.title || `${title} — Study Notes`,
-          summary: parsed.summary,
-          keyTerms: Array.isArray(parsed.keyTerms) ? parsed.keyTerms : [],
-          sections: parsed.sections,
-          takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
-          studyQuestions: Array.isArray(parsed.studyQuestions) ? parsed.studyQuestions : [],
-          actionChecklist: Array.isArray(parsed.actionChecklist) ? parsed.actionChecklist : [],
-        };
-      }
-    } catch (geminiErr) {
-      console.warn("Gemini direct note generation failed, falling back to algorithmic parser:", geminiErr);
+      console.warn("OpenRouter note generation failed:", openRouterErr);
     }
   }
 
