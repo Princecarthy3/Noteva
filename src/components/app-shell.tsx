@@ -2198,6 +2198,156 @@ function FunctionalFlashcardsView({
 }
 
 // -------------------------------------------------------------------------------------------------
+// Formatted Assistant Message Renderer (No asterisks, no raw code artifacts)
+// -------------------------------------------------------------------------------------------------
+function FormattedAssistantMessage({ content }: { content: string }) {
+  if (!content) return null;
+
+  // Clean raw code fences and stray backticks
+  const sanitized = content
+    .replace(/^```[a-z]*\n?/gim, "")
+    .replace(/```$/gm, "")
+    .replace(/`/g, "");
+
+  const rawLines = sanitized.split("\n");
+
+  type Block =
+    | { type: "heading"; text: string }
+    | { type: "list"; items: string[] }
+    | { type: "paragraph"; text: string };
+
+  const blocks: Block[] = [];
+  let currentList: string[] | null = null;
+
+  const flushList = () => {
+    if (currentList && currentList.length > 0) {
+      blocks.push({ type: "list", items: currentList });
+      currentList = null;
+    }
+  };
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const rawLine = rawLines[i].trim();
+    if (!rawLine) {
+      flushList();
+      continue;
+    }
+
+    // Bullet list item: lines starting with *, -, •, or +
+    const bulletMatch = rawLine.match(/^[\*\-•\+]\s+(.+)$/);
+    if (bulletMatch) {
+      if (!currentList) currentList = [];
+      currentList.push(bulletMatch[1]);
+      continue;
+    }
+
+    // Numbered list item: lines starting with 1., 2., etc.
+    const numberedMatch = rawLine.match(/^\d+[\.\)]\s+(.+)$/);
+    if (numberedMatch) {
+      if (!currentList) currentList = [];
+      currentList.push(numberedMatch[1]);
+      continue;
+    }
+
+    flushList();
+
+    // Section headings: e.g. **Direct Answer:**, **Connection to your course:**, **Additional explanation:**
+    const cleanHeadingMatch = rawLine.match(
+      /^(\*{1,3}|#{1,4})?\s*(Direct Answer|Connection to (?:your )?course|Additional explanation|Key [Tt]akeaways?|Summary|Overview|Important Note|Core Concepts?|Definitions?|Next Steps?)[:\s*]*(\*{1,3})?$/i
+    );
+    const shortBoldHeadingMatch = rawLine.match(/^\*{2,3}([A-Z][^:*]{2,45}):?\*{2,3}$/);
+
+    if (cleanHeadingMatch) {
+      const headingText = cleanHeadingMatch[2].replace(/:$/, "").trim();
+      blocks.push({ type: "heading", text: headingText });
+      continue;
+    }
+
+    if (shortBoldHeadingMatch) {
+      const headingText = shortBoldHeadingMatch[1].replace(/:$/, "").trim();
+      blocks.push({ type: "heading", text: headingText });
+      continue;
+    }
+
+    blocks.push({ type: "paragraph", text: rawLine });
+  }
+  flushList();
+
+  const renderInline = (str: string): React.ReactNode[] => {
+    // Replace numerical multiplication like 2 * 3 with 2 × 3 before parsing asterisks
+    const safeStr = str.replace(/(\d+)\s*\*\s*(\d+)/g, "$1 × $2");
+
+    // Split by bold patterns: **something**
+    const parts = safeStr.split(/(\*\*[^*]+?\*\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        const cleanBold = part.slice(2, -2).replace(/\*/g, "");
+        return (
+          <strong key={idx} className="font-extrabold text-[#17132d]">
+            {cleanBold}
+          </strong>
+        );
+      }
+
+      // Check for single asterisks: *something*
+      const subParts = part.split(/(\*[^*]+?\*)/g);
+      return (
+        <span key={idx}>
+          {subParts.map((sub, sIdx) => {
+            if (sub.startsWith("*") && sub.endsWith("*")) {
+              const cleanEmphasis = sub.slice(1, -1).replace(/\*/g, "");
+              return (
+                <span key={sIdx} className="font-semibold text-[#17132d]">
+                  {cleanEmphasis}
+                </span>
+              );
+            }
+            // Strip any remaining raw asterisks completely
+            return sub.replace(/\*/g, "");
+          })}
+        </span>
+      );
+    });
+  };
+
+  return (
+    <div className="space-y-2 text-[12px] leading-relaxed text-[#2c2638]">
+      {blocks.map((block, idx) => {
+        if (block.type === "heading") {
+          return (
+            <div
+              key={idx}
+              className="mt-3.5 first:mt-0 font-extrabold text-[#7259e8] text-[11px] tracking-wide uppercase"
+            >
+              {block.text}
+            </div>
+          );
+        }
+
+        if (block.type === "list") {
+          return (
+            <ul key={idx} className="my-2 space-y-2 pl-0.5">
+              {block.items.map((item, itemIdx) => (
+                <li key={itemIdx} className="flex items-start gap-2.5 leading-relaxed">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[#7259e8]" />
+                  <span className="flex-1">{renderInline(item)}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        return (
+          <p key={idx} className="leading-relaxed">
+            {renderInline(block.text)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------------------------------
 // 4. FUNCTIONAL ASSISTANT VIEW (Ask StudyStation)
 // -------------------------------------------------------------------------------------------------
 function FunctionalAssistantView({
@@ -2283,9 +2433,15 @@ function FunctionalAssistantView({
             {messages.map((message, index) => (
               <div key={index} className={`flex gap-3 ${message.role === "user" ? "justify-end" : ""}`}>
                 {message.role === "assistant" && (
-                  <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-gradient-to-tr from-[#7259e8] to-[#9b83ff] text-white shadow-sm">
-                    <Sparkles className="size-4" />
-                  </span>
+                  <div className="size-8 shrink-0 overflow-hidden rounded-xl border border-[#e8e4f1] bg-white shadow-xs">
+                    <Image
+                      src="/logo.png"
+                      alt="StudyStation"
+                      width={32}
+                      height={32}
+                      className="size-full object-cover"
+                    />
+                  </div>
                 )}
                 <div
                   className={`max-w-[82%] rounded-2xl px-4 py-3 text-[12px] leading-relaxed ${
@@ -2294,7 +2450,11 @@ function FunctionalAssistantView({
                       : "rounded-bl-md bg-[#f4f1fb] text-[#2c2638] border border-[#e8e4f1]"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  {message.role === "user" ? (
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                  ) : (
+                    <FormattedAssistantMessage content={message.content} />
+                  )}
                   {message.citation && (
                     <div className="mt-2.5 flex items-center gap-1.5 border-t border-[#ded6ee] pt-2">
                       <span className="rounded-md bg-white px-2 py-0.5 text-[9px] font-black text-[#7259e8] shadow-xs">
@@ -2308,9 +2468,15 @@ function FunctionalAssistantView({
 
             {loading && (
               <div className="flex gap-3">
-                <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-[#7259e8] text-white">
-                  <Sparkles className="size-4" />
-                </span>
+                <div className="size-8 shrink-0 overflow-hidden rounded-xl border border-[#e8e4f1] bg-white shadow-xs">
+                  <Image
+                    src="/logo.png"
+                    alt="StudyStation"
+                    width={32}
+                    height={32}
+                    className="size-full object-cover"
+                  />
+                </div>
                 <div className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-[#f4f1fb] px-4 py-3.5">
                   {[0, 1, 2].map((i) => (
                     <span
